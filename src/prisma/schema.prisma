@@ -1,0 +1,217 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserStatus {
+  active
+  inactive
+  suspended
+  pending_approval
+}
+
+enum NotificationDirection {
+  SENT
+  RECEIVED
+}
+
+enum AccountStatus {
+  Active
+  Inactive
+  Dormant
+}
+
+enum AccountType {
+  saving
+  fixed
+}
+
+enum TransactionType {
+  deposit
+  transfer
+  withdraw
+}
+
+enum TransactionStatus {
+  completed
+  failed
+  pending
+  reversed
+}
+
+enum NotificationType {
+  ACCOUNT_APPROVED
+  ACCOUNT_REJECTED
+  ACCOUNT_FROZEN
+  ACCOUNT_DORMANT
+  ACCOUNT_CLOSED
+  DEPOSIT_RECEIVED
+  WITHDRAWAL_PROCESSED
+  TRANSFER_SENT
+  TRANSFER_RECEIVED
+  PASSWORD_CHANGED
+  PROFILE_UPDATED
+  USER_ACTIVATED
+  USER_DEACTIVATED
+  BANK_ACCOUNT_CREATED
+  WELCOME
+}
+
+enum AuditAction {
+  USER_CREATED
+  USER_UPDATED
+  USER_ACTIVATED
+  USER_DEACTIVATED
+  USER_SUSPENDED
+  ACCOUNT_CREATED
+  ACCOUNT_APPROVED
+  ACCOUNT_REJECTED
+  ACCOUNT_STATUS_CHANGED
+  TRANSACTION_REVERSED
+  PASSWORD_RESET
+  ROLE_ASSIGNED
+  ROLE_REMOVED
+}
+
+model User {
+  id                String     @id @default(uuid())
+  firstName         String
+  lastName          String?
+  email             String     @unique
+  phoneNumber       String?    @unique
+  nationalId        String     @unique
+  preferredLanguage String     @default("en")
+  isVerified        Boolean    @default(false)
+  profilePicture    String?
+  password          String
+  status            UserStatus @default(active)
+  age               Int
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+
+  userRoles    UserRole[]
+  createdBy    BankAccount[] @relation("owner")
+  transactions Transaction[]
+
+  notifications       Notification[]       @relation("UserNotifications")
+  auditLogsPerformed  AuditLog[]           @relation("AuditPerformer")
+  auditLogsTargeted   AuditLog[]           @relation("AuditTarget")
+  passwordResetTokens PasswordResetToken[]
+}
+
+model Role {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  slug        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  userRoles UserRole[]
+}
+
+model UserRole {
+  id     String @id @default(uuid())
+  userId String
+  roleId String
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+}
+
+model BankAccount {
+  id            String        @id @default(uuid())
+  ownerId       String
+  accountNumber String        @unique
+  balance       Decimal       @default(0) @db.Decimal(15, 2)
+  status        AccountStatus @default(Active)
+  type          AccountType
+  createdBy     String
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  owner                User          @relation("owner", fields: [ownerId], references: [id])
+  outgoingTransactions Transaction[] @relation("FromAccount")
+  incomingTransactions Transaction[] @relation("ToAccount")
+}
+
+model Transaction {
+  id          String          @id @default(uuid())
+  type        TransactionType
+  fromAccount String?
+  toAccount   String?
+  performedBy String
+  amount      Decimal         @db.Decimal(15, 2)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  reference      String            @unique
+  status         TransactionStatus @default(completed)
+  description    String
+  balanceBefore  Decimal           @db.Decimal(15, 2)
+  balanceAfter   Decimal           @db.Decimal(15, 2)
+  currency       String            @default("RWF")
+  failureReason  String?
+  reversalReason String?
+  reversedAt     DateTime?
+  fee            Decimal           @default(0.00) @db.Decimal(10, 2)
+
+  sourceAccount      BankAccount? @relation("FromAccount", fields: [fromAccount], references: [id])
+  destinationAccount BankAccount? @relation("ToAccount", fields: [toAccount], references: [id])
+  performedByUser    User         @relation(fields: [performedBy], references: [id])
+
+  @@index([createdAt])
+  @@index([type])
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  type      NotificationType
+  title     String
+  message   String
+  isRead    Boolean          @default(false)
+  readAt    DateTime?
+  metadata  Json?
+  createdAt DateTime         @default(now())
+  userId    String
+
+  user      User                  @relation("UserNotifications", fields: [userId], references: [id])
+  direction NotificationDirection
+}
+
+model AuditLog {
+  id             String      @id @default(uuid())
+  action         AuditAction
+  entity         String
+  entityId       String
+  previousValues Json?
+  newValues      Json?
+  ipAddress      String?
+  userAgent      String?
+  notes          String?
+  createdAt      DateTime    @default(now())
+
+  performedById String
+  performedBy   User    @relation("AuditPerformer", fields: [performedById], references: [id])
+  targetUserId  String?
+  targetUser    User?   @relation("AuditTarget", fields: [targetUserId], references: [id])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  token     String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  isUsed    Boolean   @default(false)
+  ipAddress String?
+  createdAt DateTime  @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+}

@@ -1,65 +1,59 @@
-import { NotificationType, Prisma } from "@prisma/client";
-import { prisma } from "../config/prisma";
+import { NotificationType, NotificationDirection, Prisma } from "@prisma/client";
+import { notificationsRepository } from "../repositories/implementations/prismaNotifications.repository";
 import { getUserLanguage, translateNotification } from "../utils/notification.i18n";
 
 interface CreateNotificationPayload {
-  receiverId: string;
-  senderId?: string | null;
+  userId: string;
   type: NotificationType;
+  direction?: NotificationDirection;
   metadata?: Record<string, unknown> | null;
 }
 
 class NotificationService {
   async create(payload: CreateNotificationPayload): Promise<void> {
     try {
-      const receiver = await prisma.user.findUnique({
-        where: { id: payload.receiverId },
-        select: { preferredLanguage: true }
-      });
-
-      const lang = getUserLanguage(receiver?.preferredLanguage ?? "en");
+      const preferredLanguage = await notificationsRepository.findPreferredLanguageByUserId(payload.userId);
+      const lang = getUserLanguage(preferredLanguage ?? "en");
       const { title, message } = translateNotification(payload.type, lang, payload.metadata ?? {});
 
       const metadata = payload.metadata == null ? Prisma.JsonNull : (payload.metadata as Prisma.InputJsonValue);
 
-      await prisma.notification.create({
-        data: {
-          type: payload.type,
-          title,
-          message,
-          isRead: false,
-          readAt: null,
-          metadata,
-          receiverId: payload.receiverId,
-          senderId: payload.senderId ?? null
-        }
+      await notificationsRepository.create({
+        type: payload.type,
+        title,
+        message,
+        isRead: false,
+        readAt: null,
+        metadata,
+        userId: payload.userId,
+        direction: payload.direction ?? "RECEIVED"
       });
     } catch (error) {
       console.error("[NotificationService] Failed to create notification", {
         type: payload.type,
-        receiverId: payload.receiverId,
+        userId: payload.userId,
         error: error instanceof Error ? error.message : error
       });
+      throw error;
     }
   }
 
   async createBulk(
     receiverIds: string[],
-    payload: Omit<CreateNotificationPayload, "receiverId">
+    payload: Omit<CreateNotificationPayload, "userId">
   ): Promise<void> {
-    await Promise.allSettled(receiverIds.map((receiverId) => this.create({ ...payload, receiverId })));
+    await Promise.allSettled(receiverIds.map((userId) => this.create({ ...payload, userId })));
   }
 
   async accountApproved(params: {
-    receiverId: string;
-    senderId: string;
+    userId: string;
     accountId: string;
     accountNumber: string;
     accountType: string;
   }): Promise<void> {
     await this.create({
-      receiverId: params.receiverId,
-      senderId: params.senderId,
+      userId: params.userId,
+      direction: "RECEIVED",
       type: "ACCOUNT_APPROVED",
       metadata: {
         accountId: params.accountId,
@@ -70,15 +64,14 @@ class NotificationService {
   }
 
   async accountRejected(params: {
-    receiverId: string;
-    senderId: string;
+    userId: string;
     accountId: string;
     accountNumber: string;
     reason: string;
   }): Promise<void> {
     await this.create({
-      receiverId: params.receiverId,
-      senderId: params.senderId,
+      userId: params.userId,
+      direction: "RECEIVED",
       type: "ACCOUNT_REJECTED",
       metadata: {
         accountId: params.accountId,
@@ -89,15 +82,14 @@ class NotificationService {
   }
 
   async accountFrozen(params: {
-    receiverId: string;
-    senderId: string;
+    userId: string;
     accountId: string;
     accountNumber: string;
     reason: string;
   }): Promise<void> {
     await this.create({
-      receiverId: params.receiverId,
-      senderId: params.senderId,
+      userId: params.userId,
+      direction: "RECEIVED",
       type: "ACCOUNT_FROZEN",
       metadata: {
         accountId: params.accountId,
@@ -107,10 +99,10 @@ class NotificationService {
     });
   }
 
-  async accountDormant(params: { receiverId: string; accountId: string; accountNumber: string }): Promise<void> {
+  async accountDormant(params: { userId: string; accountId: string; accountNumber: string }): Promise<void> {
     await this.create({
-      receiverId: params.receiverId,
-      senderId: null,
+      userId: params.userId,
+      direction: "RECEIVED",
       type: "ACCOUNT_DORMANT",
       metadata: {
         accountId: params.accountId,
@@ -120,15 +112,14 @@ class NotificationService {
   }
 
   async accountClosed(params: {
-    receiverId: string;
-    senderId: string;
+    userId: string;
     accountId: string;
     accountNumber: string;
     reason: string;
   }): Promise<void> {
     await this.create({
-      receiverId: params.receiverId,
-      senderId: params.senderId,
+      userId: params.userId,
+      direction: "RECEIVED",
       type: "ACCOUNT_CLOSED",
       metadata: {
         accountId: params.accountId,
@@ -139,8 +130,7 @@ class NotificationService {
   }
 
   async depositReceived(params: {
-    receiverId: string;
-    senderId: string;
+    userId: string;
     transactionId: string;
     accountId: string;
     accountNumber: string;
@@ -149,8 +139,8 @@ class NotificationService {
     balanceAfter: number;
   }): Promise<void> {
     await this.create({
-      receiverId: params.receiverId,
-      senderId: params.senderId,
+      userId: params.userId,
+      direction: "RECEIVED",
       type: "DEPOSIT_RECEIVED",
       metadata: {
         transactionId: params.transactionId,
@@ -163,9 +153,32 @@ class NotificationService {
     });
   }
 
+  async sendWithdrawalCode(params: {
+    userId: string;
+    transactionId: string;
+    accountId: string;
+    accountNumber: string;
+    amount: number;
+    currency: string;
+    code: string;
+  }): Promise<void> {
+    await this.create({
+      userId: params.userId,
+      direction: "RECEIVED",
+      type: "WITHDRAWAL_CODE_SENT",
+      metadata: {
+        transactionId: params.transactionId,
+        accountId: params.accountId,
+        accountNumber: params.accountNumber,
+        amount: params.amount,
+        currency: params.currency,
+        code: params.code
+      }
+    });
+  }
+
   async withdrawalProcessed(params: {
-    receiverId: string;
-    senderId: string;
+    userId: string;
     transactionId: string;
     accountId: string;
     accountNumber: string;
@@ -174,8 +187,8 @@ class NotificationService {
     balanceAfter: number;
   }): Promise<void> {
     await this.create({
-      receiverId: params.receiverId,
-      senderId: params.senderId,
+      userId: params.userId,
+      direction: "RECEIVED",
       type: "WITHDRAWAL_PROCESSED",
       metadata: {
         transactionId: params.transactionId,
@@ -189,7 +202,7 @@ class NotificationService {
   }
 
   async transferSent(params: {
-    receiverId: string;
+    userId: string;
     transactionId: string;
     fromAccountId: string;
     fromAccountNumber: string;
@@ -201,8 +214,8 @@ class NotificationService {
     balanceAfter: number;
   }): Promise<void> {
     await this.create({
-      receiverId: params.receiverId,
-      senderId: null,
+      userId: params.userId,
+      direction: "SENT",
       type: "TRANSFER_SENT",
       metadata: {
         transactionId: params.transactionId,
@@ -219,7 +232,7 @@ class NotificationService {
   }
 
   async transferReceived(params: {
-    receiverId: string;
+    userId: string;
     transactionId: string;
     fromAccountId: string;
     fromAccountNumber: string;
@@ -231,8 +244,8 @@ class NotificationService {
     balanceAfter: number;
   }): Promise<void> {
     await this.create({
-      receiverId: params.receiverId,
-      senderId: null,
+      userId: params.userId,
+      direction: "RECEIVED",
       type: "TRANSFER_RECEIVED",
       metadata: {
         transactionId: params.transactionId,
@@ -250,8 +263,8 @@ class NotificationService {
 
   async passwordChanged(params: { receiverId: string }): Promise<void> {
     await this.create({
-      receiverId: params.receiverId,
-      senderId: null,
+      userId: params.receiverId,
+      direction: "RECEIVED",
       type: "PASSWORD_CHANGED",
       metadata: null
     });
@@ -259,41 +272,41 @@ class NotificationService {
 
   async profileUpdated(params: { receiverId: string }): Promise<void> {
     await this.create({
-      receiverId: params.receiverId,
-      senderId: null,
+      userId: params.receiverId,
+      direction: "RECEIVED",
       type: "PROFILE_UPDATED",
       metadata: null
     });
   }
 
-  async userActivated(params: { receiverId: string; senderId: string }): Promise<void> {
+  async userActivated(params: { receiverId: string }): Promise<void> {
     await this.create({
-      receiverId: params.receiverId,
-      senderId: params.senderId,
+      userId: params.receiverId,
+      direction: "RECEIVED",
       type: "USER_ACTIVATED",
       metadata: null
     });
   }
 
-  async userDeactivated(params: { receiverId: string; senderId: string; reason?: string }): Promise<void> {
+  async userDeactivated(params: { receiverId: string; reason?: string }): Promise<void> {
     await this.create({
-      receiverId: params.receiverId,
-      senderId: params.senderId,
+      userId: params.receiverId,
+      direction: "RECEIVED",
       type: "USER_DEACTIVATED",
       metadata: params.reason ? { reason: params.reason } : null
     });
   }
 
   async bankAccountCreated(params: {
-    receiverId: string;
+    userId: string;
     accountId: string;
     accountNumber: string;
     accountType: string;
     currency: string;
   }): Promise<void> {
     await this.create({
-      receiverId: params.receiverId,
-      senderId: null,
+      userId: params.userId,
+      direction: "RECEIVED",
       type: "BANK_ACCOUNT_CREATED",
       metadata: {
         accountId: params.accountId,
@@ -306,12 +319,25 @@ class NotificationService {
 
   async welcome(params: { receiverId: string }): Promise<void> {
     await this.create({
-      receiverId: params.receiverId,
-      senderId: null,
+      userId: params.receiverId,
+      direction: "RECEIVED",
       type: "WELCOME",
       metadata: null
     });
   }
+  async accountInactiveWarning(params: { userId: string; accountId: string; accountNumber: string; daysInactive: number }): Promise<void> {
+  await this.create({
+    userId: params.userId,
+    direction: "RECEIVED",
+    type: "ACCOUNT_INACTIVE_WARNING",
+    metadata: {
+      accountId: params.accountId,
+      accountNumber: params.accountNumber,
+      daysInactive: params.daysInactive,
+      message: `Your account has been inactive for ${params.daysInactive} days and is at risk of being suspended. Please access it to avoid dormancy.`
+    }
+  });
+}
 }
 
 export const notificationService = new NotificationService();

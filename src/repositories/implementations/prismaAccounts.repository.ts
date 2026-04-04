@@ -31,14 +31,30 @@ export class PrismaAccountsRepository implements AccountsRepository {
       skip: params.skip,
       take: params.take,
       orderBy: { createdAt: "desc" },
-      include: { owner: true, creator: true }
+      include: {
+        owner: {
+          include: {
+            userRoles: {
+              include: { role: true }
+            }
+          }
+        }
+      }
     });
   }
 
   getAccountById(id: string): Promise<AccountWithUsers | null> {
     return prisma.bankAccount.findUnique({
       where: { id },
-      include: { owner: true, creator: true }
+      include: {
+        owner: {
+          include: {
+            userRoles: {
+              include: { role: true }
+            }
+          }
+        }
+      }
     });
   }
 

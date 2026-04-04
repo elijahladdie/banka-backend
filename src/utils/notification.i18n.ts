@@ -70,6 +70,20 @@ const translations: NotificationTranslations = {
       message: `Konti yawe ${String(m.accountNumber ?? "")} yabaye isinziritse kubera kudakoreshwa.`
     })
   },
+  ACCOUNT_INACTIVE_WARNING: {
+    en: (m) => ({
+      title: "Account Inactivity Warning",
+      message: `Your account has been inactive for ${toNumber(m.daysInactive)} days and is at risk of being suspended. Please access it to avoid dormancy. Account: ${String(m.accountNumber ?? "")}`
+    }),
+    fr: (m) => ({
+      title: "Avertissement d'inactivité du compte",
+      message: `Votre compte est inactif depuis ${toNumber(m.daysInactive)} jours et risque d'être suspendu. Veuillez y accéder pour éviter la dormance. Compte: ${String(m.accountNumber ?? "")}`
+    }),
+    kin: (m) => ({
+      title: "Inyongeraweho Y'Inziranya Y'Ikonti",
+      message: `Konti yawe ntiyakoreshed mu mahoro ${toNumber(m.daysInactive)} kandi iraraye kubakandamutse. Gakora kugirango wihe inziranya. Konti: ${String(m.accountNumber ?? "")}`
+    })
+  },
   ACCOUNT_CLOSED: {
     en: (m) => ({
       title: "Account Closed",
@@ -96,6 +110,20 @@ const translations: NotificationTranslations = {
     kin: (m) => ({
       title: "Amafaranga Yaguye",
       message: `${String(m.currency ?? "RWF")} ${formatAmount(m.amount)} yashyizwe muri konti ${String(m.accountNumber ?? "")}. Amafaranga asigaye: ${String(m.currency ?? "RWF")} ${formatAmount(m.balanceAfter)}.`
+    })
+  },
+  WITHDRAWAL_CODE_SENT: {
+    en: (m) => ({
+      title: "Withdrawal Confirmation Code",
+      message: `Use the 4-digit code ${String(m.code ?? "")} to confirm withdrawal from account ${String(m.accountNumber ?? "")}.`
+    }),
+    fr: (m) => ({
+      title: "Code de confirmation du retrait",
+      message: `Utilisez le code à 4 chiffres ${String(m.code ?? "")} pour confirmer le retrait du compte ${String(m.accountNumber ?? "")}.`
+    }),
+    kin: (m) => ({
+      title: "Kode yo Kwemeza Kubikuza",
+      message: `Koresha kode y'imibare 4 ${String(m.code ?? "")} kugira ngo wemeze kubikuza kuri konti ${String(m.accountNumber ?? "")}.`
     })
   },
   WITHDRAWAL_PROCESSED: {

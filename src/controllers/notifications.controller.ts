@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
-import { prisma } from "../config/prisma";
 import { success, error } from "../utils/response";
+import { notificationsRepository } from "../repositories/implementations/prismaNotifications.repository";
 
 const getMyNotifications = async (req: Request, res: Response): Promise<void> => {
   const userId = req.user?.id;
@@ -12,44 +12,13 @@ const getMyNotifications = async (req: Request, res: Response): Promise<void> =>
   const page = Math.max(1, Number(req.query.page ?? 1));
   const limit = Math.min(50, Math.max(1, Number(req.query.limit ?? 20)));
   const unreadOnly = String(req.query.unreadOnly ?? "false") === "true";
-  const skip = (page - 1) * limit;
-
   try {
-    const where = {
-      receiverId: userId,
-      ...(unreadOnly ? { isRead: false } : {})
-    };
-
-    const [notifications, total, unreadCount] = await Promise.all([
-      prisma.notification.findMany({
-        where,
-        orderBy: { createdAt: "desc" },
-        skip,
-        take: limit,
-        select: {
-          id: true,
-          type: true,
-          title: true,
-          message: true,
-          isRead: true,
-          readAt: true,
-          metadata: true,
-          createdAt: true,
-          senderId: true,
-          receiverId: true,
-          sender: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              profilePicture: true
-            }
-          }
-        }
-      }),
-      prisma.notification.count({ where }),
-      prisma.notification.count({ where: { receiverId: userId, isRead: false } })
-    ]);
+    const { notifications, total, unreadCount } = await notificationsRepository.listNotifications({
+      userId,
+      page,
+      limit,
+      unreadOnly
+    });
 
     success(res, "Notifications fetched", {
       notifications,
@@ -76,7 +45,7 @@ const getUnreadCount = async (req: Request, res: Response): Promise<void> => {
   }
 
   try {
-    const unreadCount = await prisma.notification.count({ where: { receiverId: userId, isRead: false } });
+    const unreadCount = await notificationsRepository.countUnread(userId);
     success(res, "Unread count fetched", { unreadCount });
   } catch (err) {
     error(res, 500, err instanceof Error ? err.message : "Failed to fetch unread count");
@@ -93,17 +62,14 @@ const markOneAsRead = async (req: Request, res: Response): Promise<void> => {
   const notificationId = String(req.params.id);
 
   try {
-    const notification = await prisma.notification.findUnique({
-      where: { id: notificationId },
-      select: { id: true, receiverId: true, isRead: true }
-    });
+    const notification = await notificationsRepository.findById(notificationId);
 
     if (!notification) {
       error(res, 404, "Resource not found");
       return;
     }
 
-    if (notification.receiverId !== userId) {
+    if (notification.userId !== userId) {
       error(res, 403, "Access denied");
       return;
     }
@@ -113,11 +79,7 @@ const markOneAsRead = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    const updated = await prisma.notification.update({
-      where: { id: notificationId },
-      data: { isRead: true, readAt: new Date() },
-      select: { id: true, isRead: true, readAt: true }
-    });
+    const updated = await notificationsRepository.markAsRead(notificationId);
 
     success(res, "Notification marked as read", { notification: updated });
   } catch (err) {
@@ -133,14 +95,46 @@ const markAllAsRead = async (req: Request, res: Response): Promise<void> => {
   }
 
   try {
-    const result = await prisma.notification.updateMany({
-      where: { receiverId: userId, isRead: false },
-      data: { isRead: true, readAt: new Date() }
-    });
+    const count = await notificationsRepository.markAllAsRead(userId);
 
-    success(res, `${result.count} notification(s) marked as read`, { updatedCount: result.count });
+    success(res, `${count} notification(s) marked as read`, { updatedCount: count });
   } catch (err) {
     error(res, 500, err instanceof Error ? err.message : "Failed to mark notifications as read");
+  }
+};
+
+const markOneAsUnread = async (req: Request, res: Response): Promise<void> => {
+  const userId = req.user?.id;
+  if (!userId) {
+    error(res, 401, "Unauthorized");
+    return;
+  }
+
+  const notificationId = String(req.params.id);
+
+  try {
+    const notification = await notificationsRepository.findById(notificationId);
+
+    if (!notification) {
+      error(res, 404, "Resource not found");
+      return;
+    }
+
+    if (notification.userId !== userId) {
+      error(res, 403, "Access denied");
+      return;
+    }
+
+    if (!notification.isRead) {
+      success(res, "Notification marked as unread", { notification });
+      return;
+    }
+
+    const updated = await notificationsRepository.markAsUnread(notificationId);
+
+    success(res, "Notification marked as unread", { notification: updated });
+  } catch (err) {
+    error(res, 500, err instanceof Error ? err.message : "Failed to update notification");
   }
 };
 
@@ -154,22 +148,19 @@ const deleteNotification = async (req: Request, res: Response): Promise<void> =>
   const notificationId = String(req.params.id);
 
   try {
-    const notification = await prisma.notification.findUnique({
-      where: { id: notificationId },
-      select: { id: true, receiverId: true }
-    });
+    const notification = await notificationsRepository.findById(notificationId);
 
     if (!notification) {
       error(res, 404, "Resource not found");
       return;
     }
 
-    if (notification.receiverId !== userId) {
+    if (notification.userId !== userId) {
       error(res, 403, "Access denied");
       return;
     }
 
-    await prisma.notification.delete({ where: { id: notificationId } });
+    await notificationsRepository.deleteById(notificationId);
     success(res, "Notification deleted", null);
   } catch (err) {
     error(res, 500, err instanceof Error ? err.message : "Failed to delete notification");
@@ -180,6 +171,7 @@ export const notificationsController = {
   getMyNotifications,
   getUnreadCount,
   markOneAsRead,
+  markOneAsUnread,
   markAllAsRead,
   deleteNotification
 };

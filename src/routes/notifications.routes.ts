@@ -11,6 +11,7 @@ router.get("/", asyncWrapper(notificationsController.getMyNotifications));
 router.get("/unread-count", asyncWrapper(notificationsController.getUnreadCount));
 router.patch("/read-all", asyncWrapper(notificationsController.markAllAsRead));
 router.patch("/:id/read", asyncWrapper(notificationsController.markOneAsRead));
+router.patch("/:id/unread", asyncWrapper(notificationsController.markOneAsUnread));
 router.delete("/:id", asyncWrapper(notificationsController.deleteNotification));
 
 export default router;

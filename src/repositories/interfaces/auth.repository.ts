@@ -3,6 +3,7 @@ export type UserWithRoles = any;
 export interface AuthRepository {
   findUserForLoginByEmail(email: string): Promise<UserWithRoles | null>;
   findUserByEmail(email: string): Promise<any>;
+  findUserById(id: string): Promise<any>;
   findUserByIdWithRoles(id: string): Promise<UserWithRoles | null>;
   findClientRole(): Promise<any>;
   createClientRegistration(data: {
@@ -28,5 +29,6 @@ export interface AuthRepository {
     password: string;
     tokenId: string;
   }): Promise<void>;
+  updateUserPassword(data: { userId: string; password: string }): Promise<void>;
   findExistingIdentity(data: { email: string; nationalId: string; phoneNumber?: string }): Promise<any>;
 }

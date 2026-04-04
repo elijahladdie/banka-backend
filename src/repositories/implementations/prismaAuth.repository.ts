@@ -13,6 +13,10 @@ export class PrismaAuthRepository implements AuthRepository {
     return prisma.user.findUnique({ where: { email } });
   }
 
+  findUserById(id: string): Promise<any> {
+    return prisma.user.findUnique({ where: { id } });
+  }
+
   findUserByIdWithRoles(id: string): Promise<UserWithRoles | null> {
     return prisma.user.findUnique({
       where: { id },
@@ -86,6 +90,10 @@ export class PrismaAuthRepository implements AuthRepository {
         data: { isUsed: true, usedAt: new Date() }
       })
     ]);
+  }
+
+  async updateUserPassword(data: { userId: string; password: string }): Promise<void> {
+    await prisma.user.update({ where: { id: data.userId }, data: { password: data.password } });
   }
 
   findExistingIdentity(data: { email: string; nationalId: string; phoneNumber?: string }): Promise<any> {

@@ -6,6 +6,7 @@ const login = (req: Request, res: Response): Promise<void> => authService.login(
 const logout = (req: Request, res: Response): Promise<void> => authService.logout(req, res);
 const forgotPassword = (req: Request, res: Response): Promise<void> => authService.forgotPassword(req, res);
 const resetPassword = (req: Request, res: Response): Promise<void> => authService.resetPassword(req, res);
+const changePassword = (req: Request, res: Response): Promise<void> => authService.changePassword(req, res);
 const me = (req: Request, res: Response): Promise<void> => authService.me(req, res);
 
-export { register, login, logout, forgotPassword, resetPassword, me };
+export { register, login, logout, forgotPassword, resetPassword, changePassword, me };

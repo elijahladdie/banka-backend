@@ -1,6 +1,5 @@
 import bcrypt from "bcrypt";
 import type { Request, Response } from "express";
-import type { UserRecord } from "../types/domain";
 import { env } from "../config/env";
 import { success, error } from "../utils/response";
 import { blacklistToken } from "../config/redis";
@@ -66,7 +65,7 @@ const login = async (req: Request, res: Response): Promise<void> => {
   }
 
   if (user.status !== "active") {
-    error(res, 403, `User status is ${user.status}`);
+    error(res, 403, `User status is ${user.status}, Contact Manager`);
     return;
   }
 
@@ -136,9 +135,43 @@ const resetPassword = async (req: Request, res: Response): Promise<void> => {
     tokenId: record.id
   });
 
-  void notificationService.passwordChanged({ receiverId: record.userId });
+  await notificationService.passwordChanged({ receiverId: record.userId });
 
   return success(res, "Password reset successful", {});
+};
+
+const changePassword = async (req: Request, res: Response): Promise<void> => {
+  if (!req.user) {
+    error(res, 401, "Unauthorized");
+    return;
+  }
+
+  const { currentPassword, newPassword } = req.body;
+
+  const user = await authRepository.findUserById(req.user.id);
+  if (!user) {
+    error(res, 404, "User not found");
+    return;
+  }
+
+  const validPassword = await bcrypt.compare(currentPassword, user.password);
+  if (!validPassword) {
+    error(res, 400, "Current password is incorrect");
+    return;
+  }
+
+  const isSamePassword = await bcrypt.compare(newPassword, user.password);
+  if (isSamePassword) {
+    error(res, 400, "New password must be different from current password");
+    return;
+  }
+
+  const hashedPassword = await bcrypt.hash(newPassword, 10);
+  await authRepository.updateUserPassword({ userId: req.user.id, password: hashedPassword });
+
+  await notificationService.passwordChanged({ receiverId: req.user.id });
+
+  return success(res, "Password changed successfully", {});
 };
 
 const me = async (req: Request, res: Response): Promise<void> => {
@@ -149,9 +182,11 @@ const me = async (req: Request, res: Response): Promise<void> => {
 
   return success(res, "Current user fetched", {
     id: req.user.id,
+    createdAt: req.user.createdAt,
     firstName: req.user.firstName,
     lastName: req.user.lastName,
     email: req.user.email,
+    profilePicture: req.user.profilePicture,
     phoneNumber: req.user.phoneNumber,
     nationalId: req.user.nationalId,
     status: req.user.status,
@@ -159,4 +194,4 @@ const me = async (req: Request, res: Response): Promise<void> => {
   });
 };
 
-export const authService = { register, login, logout, forgotPassword, resetPassword, me };
+export const authService = { register, login, logout, forgotPassword, resetPassword, changePassword, me };

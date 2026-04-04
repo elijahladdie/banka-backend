@@ -63,8 +63,7 @@ const deposit = async (req: Request, res: Response): Promise<void> => {
     }
 
     void notificationService.depositReceived({
-      receiverId: result.ownerId,
-      senderId: user.id,
+      userId: result.ownerId,
       transactionId: result.transaction.id,
       accountId: result.account.id,
       accountNumber: result.accountNumber,
@@ -90,6 +89,7 @@ const withdraw = async (req: Request, res: Response): Promise<void> => {
   const { fromAccount, amount, description } = req.body;
 
   try {
+    const token = Math.floor(1000 + Math.random() * 9000).toString();
     const result = await transactionsRepository.runTransaction(async (tx) => {
       const source = await tx.bankAccount.findUnique({ where: { id: fromAccount } });
       if (!source) return { error: { code: 404, message: "Source account not found" } };
@@ -118,7 +118,8 @@ const withdraw = async (req: Request, res: Response): Promise<void> => {
           amount: toDecimal(amount),
           reference: generateReference("W"),
           description: description,
-          status: "completed",
+          status: "pending",
+          confirmationToken: token,
           balanceBefore: before,
           balanceAfter: after,
           fee: toDecimal(0),
@@ -126,7 +127,73 @@ const withdraw = async (req: Request, res: Response): Promise<void> => {
         }
       });
 
-      return { account, transaction, ownerId: source.ownerId, accountNumber: source.accountNumber };
+      return { account, transaction, ownerId: source.ownerId, accountNumber: source.accountNumber, token };
+    });
+
+    if ("error" in result) {
+      const err = result as { error: { code: number; message: string } };
+      error(res, err.error.code, err.error.message);
+      return;
+    }
+    void notificationService.sendWithdrawalCode({
+      userId: result.ownerId,
+      transactionId: result.transaction.id,
+      accountId: result.account.id,
+      accountNumber: result.accountNumber,
+      amount: Number(amount),
+      currency: "RWF",
+      code: result.token
+    });
+
+    const { token: _token, ...safeResult } = result;
+    success(res, "Withdrawal request submitted", {
+      ...safeResult,
+      transaction: { ...result.transaction, confirmationToken: null }
+    }, undefined, 201);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Withdrawal failed";
+    error(res, 400, message);
+  }
+};
+
+const confirmWithdrawal = async (req: Request, res: Response): Promise<void> => {
+  const user = req.user;
+  if (!user) {
+    error(res, 401, "Unauthorized");
+    return;
+  }
+
+  const { transactionId, confirmationCode } = req.body;
+
+  try {
+    const result = await transactionsRepository.runTransaction(async (tx) => {
+      const transaction = await tx.transaction.findUnique({
+        where: { id: transactionId },
+        include: {
+          sourceAccount: { select: { ownerId: true, accountNumber: true } },
+          performedByUser: true
+        }
+      });
+
+      if (!transaction) return { error: { code: 404, message: "Transaction not found" } };
+      if (transaction.type !== "withdraw") return { error: { code: 400, message: "Transaction is not a withdrawal" } };
+      if (transaction.status !== "pending") return { error: { code: 400, message: "Transaction already processed" } };
+      if (transaction.confirmationToken !== confirmationCode) return { error: { code: 400, message: "Invalid confirmation code" } };
+
+      const isAccountOwner = transaction.sourceAccount?.ownerId === user.id;
+      if (!isAccountOwner) {
+        return { error: { code: 403, message: "Only the account owner can confirm this withdrawal" } };
+      }
+
+      const updatedTransaction = await tx.transaction.update({
+        where: { id: transaction.id },
+        data: {
+          status: "completed",
+          confirmationToken: null
+        }
+      });
+
+      return { transaction: updatedTransaction, sourceAccount: transaction.sourceAccount };
     });
 
     if ("error" in result) {
@@ -135,20 +202,21 @@ const withdraw = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    void notificationService.withdrawalProcessed({
-      receiverId: result.ownerId,
-      senderId: user.id,
-      transactionId: result.transaction.id,
-      accountId: result.account.id,
-      accountNumber: result.accountNumber,
-      amount: Number(amount),
-      currency: "RWF",
-      balanceAfter: Number(result.account.balance)
-    });
+    if (result.sourceAccount) {
+      void notificationService.withdrawalProcessed({
+        userId: result.sourceAccount.ownerId,
+        transactionId: result.transaction.id,
+        accountId: result.transaction.fromAccount ?? "",
+        accountNumber: result.sourceAccount.accountNumber,
+        amount: Number(result.transaction.amount),
+        currency: result.transaction.currency,
+        balanceAfter: Number(result.transaction.balanceAfter)
+      });
+    }
 
-    success(res, "Withdrawal completed", result, undefined, 201);
+    success(res, "Withdrawal confirmed", result);
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Withdrawal failed";
+    const message = err instanceof Error ? err.message : "Failed to confirm withdrawal";
     error(res, 400, message);
   }
 };
@@ -175,9 +243,6 @@ const transfer = async (req: Request, res: Response): Promise<void> => {
       ]);
 
       if (!source || !destination) return { error: { code: 404, message: "Account not found" } };
-      if (source.ownerId !== user.id || destination.ownerId !== user.id) {
-        return { error: { code: 403, message: "Transfers are only allowed between your own accounts" } };
-      }
       if (source.status !== "Active" || destination.status !== "Active") {
         return { error: { code: 400, message: "Both accounts must be Active" } };
       }
@@ -231,7 +296,19 @@ const transfer = async (req: Request, res: Response): Promise<void> => {
     }
 
     void notificationService.transferSent({
-      receiverId: user.id,
+      userId: user.id,
+      transactionId: result.transaction.id,
+      fromAccountId: result.source.id,
+      fromAccountNumber: result.source.accountNumber,
+      toAccountId: result.destination.id,
+      toAccountNumber: result.destination.accountNumber,
+      amount: Number(amount),
+      currency: "RWF",
+      reference: result.transaction.reference,
+      balanceAfter: Number(result.source.balance)
+    });
+    void notificationService.transferReceived({
+      userId: result.destination.ownerId,
       transactionId: result.transaction.id,
       fromAccountId: result.source.id,
       fromAccountNumber: result.source.accountNumber,
@@ -274,21 +351,21 @@ const listTransactions = async (req: Request, res: Response): Promise<void> => {
       ...(query.status ? { status: query.status } : {}),
       ...(query.fromDate || query.toDate
         ? {
-            createdAt: {
-              ...(query.fromDate ? { gte: new Date(query.fromDate) } : {}),
-              ...(query.toDate ? { lte: new Date(query.toDate) } : {})
-            }
+          createdAt: {
+            ...(query.fromDate ? { gte: new Date(query.fromDate) } : {}),
+            ...(query.toDate ? { lte: new Date(query.toDate) } : {})
           }
+        }
         : {}),
       ...(!isManager
         ? isCashier
           ? { performedBy: user.id }
           : {
-              OR: [
-                { sourceAccount: { ownerId: user.id } },
-                { destinationAccount: { ownerId: user.id } }
-              ]
-            }
+            OR: [
+              { sourceAccount: { ownerId: user.id } },
+              { destinationAccount: { ownerId: user.id } }
+            ]
+          }
         : {})
     };
 
@@ -338,6 +415,7 @@ const getTransactionById = async (req: Request, res: Response): Promise<void> =>
 export const transactionsService = {
   deposit,
   withdraw,
+  confirmWithdrawal,
   transfer,
   listTransactions,
   getTransactionById

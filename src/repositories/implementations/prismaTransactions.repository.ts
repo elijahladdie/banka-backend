@@ -22,7 +22,14 @@ export class PrismaTransactionsRepository implements TransactionsRepository {
         destinationAccount: { select: { ownerId: true } },
         performedByUser: true
       }
-    });
+    }).then((transactions) =>
+      transactions.map((transaction) => {
+        const { confirmationToken: _confirmationToken, ...safeTransaction } = transaction as typeof transaction & {
+          confirmationToken?: string | null;
+        };
+        return safeTransaction as TransactionWithRelations;
+      })
+    );
   }
 
   getTransactionById(id: string): Promise<TransactionWithRelations | null> {
@@ -33,6 +40,12 @@ export class PrismaTransactionsRepository implements TransactionsRepository {
         destinationAccount: { select: { ownerId: true } },
         performedByUser: true
       }
+    }).then((transaction) => {
+      if (!transaction) return null;
+      const { confirmationToken: _confirmationToken, ...safeTransaction } = transaction as typeof transaction & {
+        confirmationToken?: string | null;
+      };
+      return safeTransaction as TransactionWithRelations;
     });
   }
 }

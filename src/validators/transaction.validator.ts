@@ -18,6 +18,13 @@ export const withdrawSchema = z.object({
   })
 });
 
+export const confirmWithdrawalSchema = z.object({
+  body: z.object({
+    transactionId: z.string().uuid(),
+    confirmationCode: z.string().regex(/^\d{4}$/, "Confirmation code must be a 4-digit number")
+  })
+});
+
 export const transferSchema = z.object({
   body: z.object({
     fromAccount: z.string().uuid(),

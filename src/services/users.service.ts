@@ -6,21 +6,14 @@ import { cacheDelByPrefix, cacheGet, cacheSet } from "./cache";
 import { paginationMeta } from "../utils/pagination";
 import { parsePagination } from "../utils/pagination";
 import { notificationService } from "./notification.service";
+import { buildUsersSearchCondition } from "../utils/search.helper";
 
 const buildWhereConditions = (query: Record<string, any>): Record<string, any> => {
   const { search, role, status } = query;
 
   return {
     ...(status ? { status: status as never } : {}),
-    ...(search
-      ? {
-          OR: [
-            { firstName: { contains: search, mode: "insensitive" as const } },
-            { lastName: { contains: search, mode: "insensitive" as const } },
-            { email: { contains: search, mode: "insensitive" as const } }
-          ]
-        }
-      : {}),
+    ...buildUsersSearchCondition(typeof search === "string" ? search : ""),
     ...(role
       ? {
           userRoles: {
@@ -39,6 +32,9 @@ const formatUserResponse = (user: any): Record<string, any> => {
     firstName: user.firstName,
     lastName: user.lastName,
     email: user.email,
+    age: user.age,
+    profilePicture: user.profilePicture,
+    nationalId: user.nationalId,
     phoneNumber: user.phoneNumber,
     status: user.status,
     createdAt: user.createdAt,
@@ -98,6 +94,17 @@ const listUsers = async (req: Request, res: Response): Promise<void> => {
 };
 
 const createUser = async (req: Request, res: Response): Promise<void> => {
+  if (!req.user) {
+    error(res, 401, "Unauthorized");
+    return;
+  }
+
+  const isManager = req.user.userRoles.some((item: { role: { slug: string } }) => item.role.slug === "manager");
+  if (!isManager) {
+    error(res, 403, "Only managers can create user accounts");
+    return;
+  }
+
   const { firstName, lastName, email, phoneNumber, nationalId, password, age, roleSlug, profilePicture } = req.body;
 
   const exists = await prisma.user.findFirst({
@@ -136,6 +143,8 @@ const createUser = async (req: Request, res: Response): Promise<void> => {
   });
 
   await cacheDelByPrefix("users:");
+
+  await notificationService.welcome({ receiverId: user.id });
 
   success(
     res,
@@ -249,11 +258,10 @@ const updateUserStatus = async (req: Request, res: Response): Promise<void> => {
   await cacheDelByPrefix("users:");
 
   if (status === "active" && currentUser.status !== "active") {
-    void notificationService.userActivated({ receiverId: userId, senderId: req.user?.id ?? userId });
+    void notificationService.userActivated({ receiverId: userId });
   } else if (status === "inactive" && currentUser.status === "active") {
     void notificationService.userDeactivated({
       receiverId: userId,
-      senderId: req.user?.id ?? userId,
       reason: typeof req.body.reason === "string" ? req.body.reason : undefined
     });
   }

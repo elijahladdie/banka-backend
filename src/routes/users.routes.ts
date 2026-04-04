@@ -13,10 +13,10 @@ import {
 
 const router = Router();
 
-router.use(authenticate, requireRole("manager"));
+router.use(authenticate, requireRole("client", "cashier", "manager"));
 
 router.get("/", validate(usersListSchema), asyncWrapper(listUsers));
-router.post("/", validate(createUserSchema), asyncWrapper(createUser));
+router.post("/", requireRole("manager"), validate(createUserSchema), asyncWrapper(createUser));
 router.get("/:id", validate(idParamSchema), asyncWrapper(getUserById));
 router.patch("/:id", validate(updateUserSchema), asyncWrapper(updateUser));
 router.patch("/:id/status", validate(updateUserStatusSchema), asyncWrapper(updateUserStatus));

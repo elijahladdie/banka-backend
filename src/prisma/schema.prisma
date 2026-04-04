@@ -49,7 +49,9 @@ enum NotificationType {
   ACCOUNT_FROZEN
   ACCOUNT_DORMANT
   ACCOUNT_CLOSED
+  ACCOUNT_INACTIVE_WARNING
   DEPOSIT_RECEIVED
+  WITHDRAWAL_CODE_SENT
   WITHDRAWAL_PROCESSED
   TRANSFER_SENT
   TRANSFER_RECEIVED
@@ -153,6 +155,7 @@ model Transaction {
 
   reference      String            @unique
   status         TransactionStatus @default(completed)
+  confirmationToken String?
   description    String
   balanceBefore  Decimal           @db.Decimal(15, 2)
   balanceAfter   Decimal           @db.Decimal(15, 2)

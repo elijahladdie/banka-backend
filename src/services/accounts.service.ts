@@ -79,38 +79,31 @@ const createAccount = async (req: Request, res: Response): Promise<void> => {
 };
 
 const listAccounts = async (req: Request, res: Response): Promise<void> => {
-  // 1. AUTH CHECK
   if (!req.user) {
     error(res, 401, "Unauthorized");
     return;
   }
 
-  // 2. PAGINATION
   const { page, limit, skip } = parsePagination(req.query as { page?: string; limit?: string });
 
-  // 3. ROLE CHECK
   const isManager = req.user.userRoles.some(
     (item: any) => item.role.slug === "manager"
   );
 
-  // 4. QUERY PARAMS
   const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
   const type = req.query.type as string | undefined;
   const status = req.query.status as string | undefined;
   const ownerIdQuery = req.query.ownerId as string | undefined;
 
-  // 5. CONDITION BUILDING (IMPORTANT LOGIC)
   let where: any = {};
 
   if (search) {
-    // 🔥 SEARCH MODE (GLOBAL — NO ownerId restriction)
     where = {
       ...(status && { status }),
       ...(type && { type }),
       ...buildAccountsSearchCondition(search),
     };
   } else {
-    // 🔒 NORMAL MODE (ROLE-BASED FILTERING)
 
     const resolvedOwnerId = isManager ? ownerIdQuery : req.user.id;
 
@@ -121,12 +114,10 @@ const listAccounts = async (req: Request, res: Response): Promise<void> => {
     };
   }
 
-  // 6. CACHE KEY (SHARED + STABLE)
   const cacheKey = search
     ? `accounts:search:${search}:type:${type ?? "all"}:status:${status ?? "all"}:page:${page}:limit:${limit}`
     : `accounts:list:type:${type ?? "all"}:status:${status ?? "all"}:owner:${isManager ? ownerIdQuery ?? "all" : "self"}:page:${page}:limit:${limit}`;
 
-  // 7. CACHE CHECK
   const cached = await cacheGet<{ items: unknown[]; total: number }>(cacheKey);
   if (cached) {
     const safeItems = sanitizeAccounts(cached.items as any[]);
@@ -134,7 +125,7 @@ const listAccounts = async (req: Request, res: Response): Promise<void> => {
     return;
   }
 
-  // 8. DATABASE QUERY
+
   const [total, items] = await Promise.all([
     accountsRepository.countAccounts(where),
     accountsRepository.listAccounts({ where, skip, take: limit }),
@@ -142,10 +133,8 @@ const listAccounts = async (req: Request, res: Response): Promise<void> => {
 
   const safeItems = sanitizeAccounts(items as any[]);
 
-  // 9. CACHE STORE (SHORT TTL FOR FRESHNESS)
-  await cacheSet(cacheKey, { items: safeItems, total }, 30);
+  await cacheSet(cacheKey, { items: safeItems, total }, 3000);
 
-  // 10. RESPONSE
   success(res, "Accounts fetched", safeItems, paginationMeta(page, limit, total));
 };
 

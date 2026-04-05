@@ -6,6 +6,7 @@ import { parsePagination, paginationMeta } from "../utils/pagination";
 import { transactionsRepository } from "../repositories/implementations/prismaTransactions.repository";
 import { generateReference } from "../utils/reference";
 import { notificationService } from "./notification.service";
+import { t } from "../i18n";
 
 function toDecimal(value: number) {
   return Number(value.toFixed(2));
@@ -14,7 +15,7 @@ function toDecimal(value: number) {
 const deposit = async (req: Request, res: Response): Promise<void> => {
   const user = req.user;
   if (!user) {
-    error(res, 401, "Unauthorized");
+    error(res, 401, t(req, "common.unauthorized"));
     return;
   }
 
@@ -23,8 +24,8 @@ const deposit = async (req: Request, res: Response): Promise<void> => {
   try {
     const result = await transactionsRepository.runTransaction(async (tx) => {
       const destination = await tx.bankAccount.findUnique({ where: { id: toAccount } });
-      if (!destination) return { error: { code: 404, message: "Destination account not found" } };
-      if (destination.status !== "Active") return { error: { code: 400, message: "Account is not Active" } };
+      if (!destination) return { error: { code: 404, message: t(req, "transactions.destinationAccountNotFound") } };
+      if (destination.status !== "Active") return { error: { code: 400, message: t(req, "transactions.accountNotActive") } };
 
       await tx.$executeRaw`SELECT id FROM "BankAccount" WHERE id = ${destination.id} FOR UPDATE`;
 
@@ -72,9 +73,9 @@ const deposit = async (req: Request, res: Response): Promise<void> => {
       balanceAfter: Number(result.account.balance)
     });
 
-    success(res, "Deposit completed", result, undefined, 201);
+    success(res, t(req, "transactions.depositCompleted"), result, undefined, 201);
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Deposit failed";
+    const message = err instanceof Error ? err.message : t(req, "transactions.depositFailed");
     error(res, 400, message);
   }
 };
@@ -82,7 +83,7 @@ const deposit = async (req: Request, res: Response): Promise<void> => {
 const withdraw = async (req: Request, res: Response): Promise<void> => {
   const user = req.user;
   if (!user) {
-    error(res, 401, "Unauthorized");
+    error(res, 401, t(req, "common.unauthorized"));
     return;
   }
 
@@ -92,13 +93,13 @@ const withdraw = async (req: Request, res: Response): Promise<void> => {
     const token = Math.floor(1000 + Math.random() * 9000).toString();
     const result = await transactionsRepository.runTransaction(async (tx) => {
       const source = await tx.bankAccount.findUnique({ where: { id: fromAccount } });
-      if (!source) return { error: { code: 404, message: "Source account not found" } };
-      if (source.status !== "Active") return { error: { code: 400, message: "Account is not Active" } };
+      if (!source) return { error: { code: 404, message: t(req, "transactions.sourceAccountNotFound") } };
+      if (source.status !== "Active") return { error: { code: 400, message: t(req, "transactions.accountNotActive") } };
 
       await tx.$executeRaw`SELECT id FROM "BankAccount" WHERE id = ${source.id} FOR UPDATE`;
 
       if (source.balance.lessThan(amount)) {
-        return { error: { code: 400, message: "Insufficient funds" } };
+        return { error: { code: 400, message: t(req, "transactions.insufficientFunds") } };
       }
 
       const before = source.balance;
@@ -146,12 +147,12 @@ const withdraw = async (req: Request, res: Response): Promise<void> => {
     });
 
     const { token: _token, ...safeResult } = result;
-    success(res, "Withdrawal request submitted", {
+    success(res, t(req, "transactions.withdrawalSubmitted"), {
       ...safeResult,
       transaction: { ...result.transaction, confirmationToken: null }
     }, undefined, 201);
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Withdrawal failed";
+    const message = err instanceof Error ? err.message : t(req, "transactions.withdrawalFailed");
     error(res, 400, message);
   }
 };
@@ -159,7 +160,7 @@ const withdraw = async (req: Request, res: Response): Promise<void> => {
 const confirmWithdrawal = async (req: Request, res: Response): Promise<void> => {
   const user = req.user;
   if (!user) {
-    error(res, 401, "Unauthorized");
+    error(res, 401, t(req, "common.unauthorized"));
     return;
   }
 
@@ -175,14 +176,14 @@ const confirmWithdrawal = async (req: Request, res: Response): Promise<void> => 
         }
       });
 
-      if (!transaction) return { error: { code: 404, message: "Transaction not found" } };
-      if (transaction.type !== "withdraw") return { error: { code: 400, message: "Transaction is not a withdrawal" } };
-      if (transaction.status !== "pending") return { error: { code: 400, message: "Transaction already processed" } };
-      if (transaction.confirmationToken !== confirmationCode) return { error: { code: 400, message: "Invalid confirmation code" } };
+      if (!transaction) return { error: { code: 404, message: t(req, "transactions.transactionNotFound") } };
+      if (transaction.type !== "withdraw") return { error: { code: 400, message: t(req, "transactions.transactionNotWithdrawal") } };
+      if (transaction.status !== "pending") return { error: { code: 400, message: t(req, "transactions.transactionAlreadyProcessed") } };
+      if (transaction.confirmationToken !== confirmationCode) return { error: { code: 400, message: t(req, "transactions.invalidConfirmationCode") } };
 
       const isAccountOwner = transaction.sourceAccount?.ownerId === user.id;
       if (!isAccountOwner) {
-        return { error: { code: 403, message: "Only the account owner can confirm this withdrawal" } };
+        return { error: { code: 403, message: t(req, "transactions.onlyOwnerCanConfirmWithdrawal") } };
       }
 
       const updatedTransaction = await tx.transaction.update({
@@ -214,9 +215,9 @@ const confirmWithdrawal = async (req: Request, res: Response): Promise<void> => 
       });
     }
 
-    success(res, "Withdrawal confirmed", result);
+    success(res, t(req, "transactions.withdrawalConfirmed"), result);
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to confirm withdrawal";
+    const message = err instanceof Error ? err.message : t(req, "transactions.failedToConfirmWithdrawal");
     error(res, 400, message);
   }
 };
@@ -224,14 +225,14 @@ const confirmWithdrawal = async (req: Request, res: Response): Promise<void> => 
 const transfer = async (req: Request, res: Response): Promise<void> => {
   const user = req.user;
   if (!user) {
-    error(res, 401, "Unauthorized");
+    error(res, 401, t(req, "common.unauthorized"));
     return;
   }
 
   const { fromAccount, toAccount, amount, description } = req.body;
 
   if (fromAccount === toAccount) {
-    error(res, 400, "Source and destination accounts must be different");
+    error(res, 400, t(req, "transactions.sourceAndDestinationMustDiffer"));
     return;
   }
 
@@ -242,9 +243,9 @@ const transfer = async (req: Request, res: Response): Promise<void> => {
         tx.bankAccount.findUnique({ where: { id: toAccount } })
       ]);
 
-      if (!source || !destination) return { error: { code: 404, message: "Account not found" } };
+      if (!source || !destination) return { error: { code: 404, message: t(req, "transactions.accountNotFound") } };
       if (source.status !== "Active" || destination.status !== "Active") {
-        return { error: { code: 400, message: "Both accounts must be Active" } };
+        return { error: { code: 400, message: t(req, "transactions.bothAccountsMustBeActive") } };
       }
 
       const ids = [source.id, destination.id].sort();
@@ -252,7 +253,7 @@ const transfer = async (req: Request, res: Response): Promise<void> => {
       await tx.$executeRaw`SELECT id FROM "BankAccount" WHERE id IN (${join(ids)}) FOR UPDATE`;
 
       if (source.balance.lessThan(amount)) {
-        return { error: { code: 400, message: "Insufficient funds" } };
+        return { error: { code: 400, message: t(req, "transactions.insufficientFunds") } };
       }
 
       const sourceBefore = source.balance;
@@ -320,9 +321,9 @@ const transfer = async (req: Request, res: Response): Promise<void> => {
       balanceAfter: Number(result.source.balance)
     });
 
-    success(res, "Transfer completed", result, undefined, 201);
+    success(res, t(req, "transactions.transferCompleted"), result, undefined, 201);
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Transfer failed";
+    const message = err instanceof Error ? err.message : t(req, "transactions.transferFailed");
     error(res, 400, message);
   }
 };
@@ -330,7 +331,7 @@ const transfer = async (req: Request, res: Response): Promise<void> => {
 const listTransactions = async (req: Request, res: Response): Promise<void> => {
   const user = req.user;
   if (!user) {
-    error(res, 401, "Unauthorized");
+    error(res, 401, t(req, "common.unauthorized"));
     return;
   }
 
@@ -374,9 +375,9 @@ const listTransactions = async (req: Request, res: Response): Promise<void> => {
       transactionsRepository.listTransactions({ where, skip, take: limit })
     ]);
 
-    success(res, "Transactions fetched", items, paginationMeta(page, limit, total));
+    success(res, t(req, "transactions.fetched"), items, paginationMeta(page, limit, total));
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to fetch transactions";
+    const message = err instanceof Error ? err.message : t(req, "transactions.failedToFetchMany");
     error(res, 400, message);
   }
 };
@@ -384,7 +385,7 @@ const listTransactions = async (req: Request, res: Response): Promise<void> => {
 const getTransactionById = async (req: Request, res: Response): Promise<void> => {
   const user = req.user;
   if (!user) {
-    error(res, 401, "Unauthorized");
+    error(res, 401, t(req, "common.unauthorized"));
     return;
   }
 
@@ -392,7 +393,7 @@ const getTransactionById = async (req: Request, res: Response): Promise<void> =>
     const transactionId = String(req.params.id);
     const transaction = await transactionsRepository.getTransactionById(transactionId);
     if (!transaction) {
-      error(res, 404, "Transaction not found");
+      error(res, 404, t(req, "transactions.transactionNotFound"));
       return;
     }
 
@@ -401,13 +402,13 @@ const getTransactionById = async (req: Request, res: Response): Promise<void> =>
     const canViewAsClient = transaction.sourceAccount?.ownerId === user.id || transaction.destinationAccount?.ownerId === user.id;
 
     if (!isManager && !canViewAsClient && !(isCashier && transaction.performedBy === user.id)) {
-      error(res, 403, "Forbidden");
+      error(res, 403, t(req, "common.forbidden"));
       return;
     }
 
-    success(res, "Transaction fetched", transaction);
+    success(res, t(req, "transactions.fetchedOne"), transaction);
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to fetch transaction";
+    const message = err instanceof Error ? err.message : t(req, "transactions.failedToFetchOne");
     error(res, 400, message);
   }
 };

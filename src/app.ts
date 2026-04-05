@@ -7,6 +7,7 @@ import swaggerUi from "swagger-ui-express";
 import { env } from "./config/env";
 import { logger } from "./config/logger";
 import { swaggerSpec } from "./config/swagger";
+import { i18nMiddleware } from "./i18n";
 import { requestContext } from "./middleware/requestContext";
 import { errorHandler, notFound } from "./middleware/error";
 import routes from "./routes/index";
@@ -34,6 +35,7 @@ app.use(
 app.use(cors({ origin: env.frontendUrl, credentials: true }));
 app.use(cookieParser());
 app.use(express.json());
+app.use(i18nMiddleware);
 
 app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 app.use("/api", routes);

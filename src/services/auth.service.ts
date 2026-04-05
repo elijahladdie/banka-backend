@@ -8,6 +8,7 @@ import { authRepository } from "../repositories/implementations/prismaAuth.repos
 import { createPasswordResetToken, hashPasswordResetToken } from "../utils/passwordReset";
 import { sendMail } from "./mailer";
 import { notificationService } from "./notification.service";
+import { t } from "../i18n";
 
 const setAuthCookie = (res: Response, token: string): void => {
   res.cookie(env.cookieName, token, {
@@ -23,13 +24,13 @@ const register = async (req: Request, res: Response): Promise<void> => {
 
   const existing = await authRepository.findExistingIdentity(payload);
   if (existing) {
-    error(res, 409, "Email or identity already exists");
+    error(res, 409, t(req, "auth.emailOrIdentityExists"));
     return;
   }
 
   const clientRole = await authRepository.findClientRole();
   if (!clientRole) {
-    error(res, 500, "Client role not seeded");
+    error(res, 500, t(req, "auth.clientRoleNotSeeded"));
     return;
   }
 
@@ -42,7 +43,7 @@ const register = async (req: Request, res: Response): Promise<void> => {
 
   void notificationService.welcome({ receiverId: user.id });
 
-  success(res, "Registration successful. Account pending approval", {
+  success(res, t(req, "auth.registrationPendingApproval"), {
     id: user.id,
     email: user.email,
     status: user.status
@@ -54,31 +55,32 @@ const login = async (req: Request, res: Response): Promise<void> => {
 
   const user = await authRepository.findUserForLoginByEmail(email);
   if (!user) {
-    error(res, 401, "Invalid credentials");
+    error(res, 401, t(req, "auth.invalidCredentials"));
     return;
   }
 
   const validPassword = await bcrypt.compare(password, user.password);
   if (!validPassword) {
-    error(res, 401, "Invalid credentials");
+    error(res, 401, t(req, "auth.invalidCredentials"));
     return;
   }
 
   if (user.status !== "active") {
-    error(res, 403, `User status is ${user.status}, Contact Manager`);
+    error(res, 403, t(req, "auth.userStatusContactManager", { status: user.status }));
     return;
   }
 
   const token = signAccessToken(user.id);
   setAuthCookie(res, token);
 
-  success(res, "Login successful", {
+  success(res, t(req, "auth.loginSuccessful"), {
     token,
     user: {
       id: user.id,
       firstName: user.firstName,
       lastName: user.lastName,
       email: user.email,
+      preferredLanguage: user.preferredLanguage,
       status: user.status,
       roles: user.userRoles.map((item: { role: { slug: string } }) => item.role.slug)
     }
@@ -91,7 +93,7 @@ const logout = async (req: Request, res: Response): Promise<void> => {
     await blacklistToken(token, 24 * 60 * 60);
   }
   res.clearCookie(env.cookieName);
-  success(res, "Logout successful", {});
+  success(res, t(req, "auth.logoutSuccessful"), {});
 };
 
 const forgotPassword = async (req: Request, res: Response): Promise<void> => {
@@ -99,7 +101,7 @@ const forgotPassword = async (req: Request, res: Response): Promise<void> => {
 
   const user = await authRepository.findUserByEmail(email);
   if (!user) {
-   return success(res, "If the email exists, a reset link has been sent", {});
+    return success(res, t(req, "auth.resetLinkIfEmailExists"), {});
   }
 
   const { raw, hashed } = createPasswordResetToken();
@@ -113,9 +115,13 @@ const forgotPassword = async (req: Request, res: Response): Promise<void> => {
   });
 
   const resetUrl = `${env.frontendUrl}/reset-password?token=${raw}`;
-  await sendMail(user.email, "Password reset", `Reset your password: ${resetUrl}`);
+  await sendMail(
+    user.email,
+    t(req, "auth.resetEmailSubject"),
+    t(req, "auth.resetEmailBody", { resetUrl })
+  );
 
-  return success(res, "If the email exists, a reset link has been sent", {});
+  return success(res, t(req, "auth.resetLinkIfEmailExists"), {});
 };
 
 const resetPassword = async (req: Request, res: Response): Promise<void> => {
@@ -124,7 +130,7 @@ const resetPassword = async (req: Request, res: Response): Promise<void> => {
 
   const record = await authRepository.findResetToken(hashedToken);
   if (!record || record.isUsed || record.expiresAt < new Date()) {
-    error(res, 400, "Invalid or expired token");
+    error(res, 400, t(req, "auth.invalidOrExpiredToken"));
     return;
   }
 
@@ -137,12 +143,12 @@ const resetPassword = async (req: Request, res: Response): Promise<void> => {
 
   await notificationService.passwordChanged({ receiverId: record.userId });
 
-  return success(res, "Password reset successful", {});
+  return success(res, t(req, "auth.passwordResetSuccessful"), {});
 };
 
 const changePassword = async (req: Request, res: Response): Promise<void> => {
   if (!req.user) {
-    error(res, 401, "Unauthorized");
+    error(res, 401, t(req, "common.unauthorized"));
     return;
   }
 
@@ -150,19 +156,19 @@ const changePassword = async (req: Request, res: Response): Promise<void> => {
 
   const user = await authRepository.findUserById(req.user.id);
   if (!user) {
-    error(res, 404, "User not found");
+    error(res, 404, t(req, "auth.userNotFound"));
     return;
   }
 
   const validPassword = await bcrypt.compare(currentPassword, user.password);
   if (!validPassword) {
-    error(res, 400, "Current password is incorrect");
+    error(res, 400, t(req, "auth.currentPasswordIncorrect"));
     return;
   }
 
   const isSamePassword = await bcrypt.compare(newPassword, user.password);
   if (isSamePassword) {
-    error(res, 400, "New password must be different from current password");
+    error(res, 400, t(req, "auth.newPasswordMustDiffer"));
     return;
   }
 
@@ -171,21 +177,22 @@ const changePassword = async (req: Request, res: Response): Promise<void> => {
 
   await notificationService.passwordChanged({ receiverId: req.user.id });
 
-  return success(res, "Password changed successfully", {});
+  return success(res, t(req, "auth.passwordChangedSuccessfully"), {});
 };
 
 const me = async (req: Request, res: Response): Promise<void> => {
   if (!req.user) {
-    error(res, 401, "Unauthorized");
+    error(res, 401, t(req, "common.unauthorized"));
     return;
   }
 
-  return success(res, "Current user fetched", {
+  return success(res, t(req, "auth.currentUserFetched"), {
     id: req.user.id,
     createdAt: req.user.createdAt,
     firstName: req.user.firstName,
     lastName: req.user.lastName,
     email: req.user.email,
+    preferredLanguage: req.user.preferredLanguage,
     profilePicture: req.user.profilePicture,
     phoneNumber: req.user.phoneNumber,
     nationalId: req.user.nationalId,

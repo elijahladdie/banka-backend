@@ -538,7 +538,7 @@ export const swaggerSpec = swaggerJsdoc({
       }
     },
     security: [{ bearerAuth: [] }],
-    servers: [{ url: "http://localhost:5000" }]
+    servers: [{ url: "http://localhost:5000" }, { url: "https://banka-backend-latest.onrender.com/" }]
   },
   apis: []
 });

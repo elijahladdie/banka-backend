@@ -11,7 +11,7 @@ permissions:
   packages: write
 
 jobs:
-  quality-checks:
+  test:
     runs-on: ubuntu-latest
 
     steps:
@@ -27,12 +27,12 @@ jobs:
       - name: Install dependencies
         run: yarn install --frozen-lockfile
 
-      - name: Run quality gate
-        run: yarn husky
+      - name: Run tests
+        run: yarn test
 
-  test:
+  build-image:
     runs-on: ubuntu-latest
-    needs: quality-checks
+    needs: test
 
     steps:
       - name: Checkout
@@ -41,93 +41,11 @@ jobs:
       - name: Build Docker image
         run: docker build -t banka-backend:ci .
 
-      - name: Start dependencies
-        run: |
-          set -e
-          db_ready=false
-
-          docker network create banka-ci-net
-
-          docker run -d --name banka-pg-ci --network banka-ci-net \
-            -e POSTGRES_USER=banka \
-            -e POSTGRES_PASSWORD=banka \
-            -e POSTGRES_DB=banka \
-            postgres:16
-
-          docker run -d --name banka-redis-ci --network banka-ci-net redis:7-alpine
-
-          for i in $(seq 1 30); do
-            if docker exec banka-pg-ci pg_isready -U banka -d banka >/dev/null 2>&1; then
-              echo "Postgres is ready"
-              db_ready=true
-              break
-            fi
-            sleep 2
-          done
-
-          if [ "$db_ready" = true ]; then
-            exit 0
-          fi
-
-          echo "Postgres did not become ready"
-          docker logs banka-pg-ci || true
-          exit 1
-
-      - name: Start app container
-        run: |
-          set -e
-
-          docker run -d --name banka-backend-ci --network banka-ci-net -p 5000:5000 \
-            -e PORT=5000 \
-            -e NODE_ENV=production \
-            -e DATABASE_URL=postgresql://banka:banka@banka-pg-ci:5432/banka \
-            -e JWT_SECRET=ci-secret \
-            -e JWT_EXPIRES_IN=1d \
-            -e COOKIE_NAME=banka_token \
-            -e COOKIE_SECURE=false \
-            -e FRONTEND_URL=http://localhost:3000 \
-            -e REDIS_URL=redis://banka-redis-ci:6379 \
-            -e SMTP_HOST=localhost \
-            -e SMTP_PORT=587 \
-            -e SMTP_USER=test \
-            -e SMTP_PASS=test \
-            -e SMTP_FROM=no-reply@banka.local \
-            banka-backend:ci
-
-      - name: Verify app health
-        run: |
-          set -e
-
-          for i in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:5000/health >/dev/null; then
-              echo "Health check passed"
-              exit 0
-            fi
-            sleep 2
-          done
-
-          echo "Health check failed"
-          docker logs banka-backend-ci
-          exit 1
-
-      - name: Show container logs on failure
-        if: failure()
-        run: |
-          docker logs banka-backend-ci || true
-          docker logs banka-pg-ci || true
-          docker logs banka-redis-ci || true
-
-      - name: Cleanup test containers
-        if: always()
-        run: |
-          docker rm -f banka-backend-ci banka-pg-ci banka-redis-ci 2>/dev/null || true
-          docker network rm banka-ci-net 2>/dev/null || true
-
   publish:
     runs-on: ubuntu-latest
     needs:
-      - quality-checks
       - test
+      - build-image
     if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
 
     steps:

@@ -32,7 +32,14 @@ app.use(
     }
   })
 );
-app.use(cors({ origin: env.frontendUrl, credentials: true }));
+app.use(
+  cors({
+    origin: "*",
+    credentials: false,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "Accept", "Origin", "X-Requested-With"]
+  })
+);
 app.use(cookieParser());
 app.use(express.json());
 app.use(i18nMiddleware);

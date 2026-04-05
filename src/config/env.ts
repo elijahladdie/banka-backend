@@ -42,7 +42,6 @@ export const env = {
   cookieSecure: validatedEnv.COOKIE_SECURE,
 
   frontendUrl: validatedEnv.FRONTEND_URL,
-
   databaseSsl: validatedEnv.DATABASE_SSL,
 
   redisUrl: validatedEnv.REDIS_URL,

@@ -1,0 +1,8 @@
+dist
+coverage
+logs
+node_modules
+prisma.config.ts
+tsconfig.json
+src/**/*.ts
+!src/tests/**/*.ts

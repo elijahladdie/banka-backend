@@ -42,6 +42,7 @@ JWT_EXPIRES_IN=1d
 COOKIE_NAME=banka_token
 COOKIE_SECURE=false
 FRONTEND_URL=http://localhost:3000
+FRONTEND_URLS=
 REDIS_URL=redis://localhost:6379
 SMTP_HOST=localhost
 SMTP_PORT=587
@@ -50,7 +51,8 @@ SMTP_PASS=
 SMTP_FROM=no-reply@banka.local
 ```
 
-Set `DATABASE_SSL=true` only when your Postgres provider requires SSL.
+Set `DATABASE_SSL=false` only when your Postgres provider does not require SSL.
+
 
 ## Installation
 
@@ -148,6 +150,7 @@ docker run --rm -p 5000:5000 \
   -e COOKIE_NAME=banka_token \
   -e COOKIE_SECURE=false \
   -e FRONTEND_URL=http://localhost:3000 \
+  -e FRONTEND_URLS= \
   -e REDIS_URL=redis://host.docker.internal:6379 \
   -e SMTP_HOST=localhost \
   -e SMTP_PORT=587 \
@@ -238,7 +241,7 @@ Typical flow for a manager:
 
 - The API uses Redis for cache and token blacklist support.
 - If Redis is unavailable, the app falls back to in-memory storage for those features.
-- The API uses CORS and allows browser requests from any origin while still supporting credentials.
+- The API uses CORS with an environment-driven origin allowlist (`FRONTEND_URL`, optional `FRONTEND_URLS`).
 - The database connection can be configured with SSL using `DATABASE_SSL=true`.
 
 ## GitHub Actions

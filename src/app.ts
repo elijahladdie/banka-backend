@@ -4,7 +4,6 @@ import cookieParser from "cookie-parser";
 import type { Request, Response } from "express";
 import pinoHttpImport from "pino-http";
 import swaggerUi from "swagger-ui-express";
-import { env } from "./config/env";
 import { logger } from "./config/logger";
 import { swaggerSpec } from "./config/swagger";
 import { i18nMiddleware } from "./i18n";
@@ -34,8 +33,8 @@ app.use(
 );
 app.use(
   cors({
-    origin: "*",
-    credentials: false,
+    origin: true,
+    credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "Accept", "Origin", "X-Requested-With"]
   })

@@ -4,6 +4,7 @@ import { env } from "../config/env";
 import { prisma } from "../config/prisma";
 import { isTokenBlacklisted } from "../config/redis";
 import { error } from "../utils/response";
+import { t } from "../i18n";
 
 type TokenPayload = { sub: string; exp: number };
 
@@ -20,12 +21,12 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
   const token = tokenFromCookie ?? tokenFromHeader;
 
   if (!token) {
-    return error(res, 401, "Unauthorized");
+    return error(res, 401, t(req, "common.unauthorized"));
   }
 
   const blacklisted = await isTokenBlacklisted(token);
   if (blacklisted) {
-    return error(res, 401, "Token invalidated");
+    return error(res, 401, t(req, "common.tokenInvalidated"));
   }
 
   try {
@@ -36,26 +37,26 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
     });
 
     if (!user) {
-      return error(res, 401, "Unauthorized");
+      return error(res, 401, t(req, "common.unauthorized"));
     }
 
     req.authToken = token;
     req.user = user;
     next();
   } catch {
-    return error(res, 401, "Invalid token");
+    return error(res, 401, t(req, "common.invalidToken"));
   }
 }
 
 export function requireRole(...slugs: string[]) {
   return (req: Request, res: Response, next: NextFunction) => {
     if (!req.user) {
-      return error(res, 401, "Unauthorized");
+      return error(res, 401, t(req, "common.unauthorized"));
     }
     const userSlugs = req.user.userRoles.map((ur) => ur.role.slug);
     const hasRole = slugs.some((slug) => userSlugs.includes(slug));
     if (!hasRole) {
-      return error(res, 403, "Forbidden");
+      return error(res, 403, t(req, "common.forbidden"));
     }
     next();
   };

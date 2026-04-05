@@ -8,6 +8,7 @@ import { cacheDelByPrefix, cacheGet, cacheSet } from "./cache";
 import { parsePagination } from "../utils/pagination";
 import { notificationService } from "./notification.service";
 import { buildAccountsSearchCondition } from "../utils/search.helper";
+import { t } from "../i18n";
 
 const sanitizeOwner = (owner: any): any => {
   if (!owner || typeof owner !== "object") return owner;
@@ -33,12 +34,12 @@ const uniqueAccountNumber = async (nationalId: string): Promise<string> => {
       return accountNumber;
     }
   }
-  throw new Error("Unable to generate unique account number");
+  throw new Error("accounts.unableToGenerateUniqueNumber");
 };
 
 const createAccount = async (req: Request, res: Response): Promise<void> => {
   if (!req.user) {
-    error(res, 401, "Unauthorized");
+    error(res, 401, t(req, "common.unauthorized"));
     return;
   }
 
@@ -46,13 +47,13 @@ const createAccount = async (req: Request, res: Response): Promise<void> => {
   const isManager = req.user.userRoles.some((item: any) => item.role.slug === "manager");
 
   if (ownerId !== req.user.id && !isManager) {
-    error(res, 403, "Forbidden");
+    error(res, 403, t(req, "common.forbidden"));
     return;
   }
 
   const owner = await accountsRepository.findUserById(ownerId);
   if (!owner) {
-    error(res, 404, "Owner not found");
+    error(res, 404, t(req, "accounts.ownerNotFound"));
     return;
   }
 
@@ -75,12 +76,12 @@ const createAccount = async (req: Request, res: Response): Promise<void> => {
     currency: "RWF"
   });
 
-  success(res, "Account request created", account, undefined, 201);
+  success(res, t(req, "accounts.requestCreated"), account, undefined, 201);
 };
 
 const listAccounts = async (req: Request, res: Response): Promise<void> => {
   if (!req.user) {
-    error(res, 401, "Unauthorized");
+    error(res, 401, t(req, "common.unauthorized"));
     return;
   }
 
@@ -121,7 +122,7 @@ const listAccounts = async (req: Request, res: Response): Promise<void> => {
   const cached = await cacheGet<{ items: unknown[]; total: number }>(cacheKey);
   if (cached) {
     const safeItems = sanitizeAccounts(cached.items as any[]);
-    success(res, "Accounts fetched", safeItems, paginationMeta(page, limit, cached.total));
+    success(res, t(req, "accounts.fetched"), safeItems, paginationMeta(page, limit, cached.total));
     return;
   }
 
@@ -135,12 +136,12 @@ const listAccounts = async (req: Request, res: Response): Promise<void> => {
 
   await cacheSet(cacheKey, { items: safeItems, total }, 3000);
 
-  success(res, "Accounts fetched", safeItems, paginationMeta(page, limit, total));
+  success(res, t(req, "accounts.fetched"), safeItems, paginationMeta(page, limit, total));
 };
 
 const getAccountById = async (req: Request, res: Response): Promise<void> => {
   if (!req.user) {
-    error(res, 401, "Unauthorized");
+    error(res, 401, t(req, "common.unauthorized"));
     return;
   }
 
@@ -148,17 +149,17 @@ const getAccountById = async (req: Request, res: Response): Promise<void> => {
   const account = await accountsRepository.getAccountById(accountId);
 
   if (!account) {
-    error(res, 404, "Account not found");
+    error(res, 404, t(req, "accounts.accountNotFound"));
     return;
   }
 
   const isManager = req.user.userRoles.some((item: any) => item.role.slug === "manager");
   if (!isManager && account.ownerId !== req.user.id) {
-    error(res, 403, "Forbidden");
+    error(res, 403, t(req, "common.forbidden"));
     return;
   }
 
-  success(res, "Account fetched", sanitizeAccount(account));
+  success(res, t(req, "accounts.fetchedOne"), sanitizeAccount(account));
 };
 
 const getAccountByNumber = async (req: Request, res: Response): Promise<void> => {
@@ -166,13 +167,13 @@ const getAccountByNumber = async (req: Request, res: Response): Promise<void> =>
 
   const account = await accountsRepository.findAccountByNumber(accountNumber);
   if (!account) {
-    error(res, 404, "Account not found");
+    error(res, 404, t(req, "accounts.accountNotFound"));
     return;
   }
 
   const owner = await accountsRepository.findUserById(account.ownerId);
 
-  success(res, "Account fetched", {
+  success(res, t(req, "accounts.fetchedOne"), {
     id: account.id,
     accountNumber: account.accountNumber,
     ownerId: account.ownerId,
@@ -194,7 +195,7 @@ const approveAccount = async (req: Request, res: Response): Promise<void> => {
   const accountId = String(req.params.id);
   const account = await accountsRepository.getAccountById(accountId);
   if (!account) {
-    error(res, 404, "Account not found");
+    error(res, 404, t(req, "accounts.accountNotFound"));
     return;
   }
 
@@ -208,14 +209,14 @@ const approveAccount = async (req: Request, res: Response): Promise<void> => {
     accountType: account.type
   });
 
-  success(res, "Account approved", updated);
+  success(res, t(req, "accounts.approved"), updated);
 };
 
 const rejectAccount = async (req: Request, res: Response): Promise<void> => {
   const accountId = String(req.params.id);
   const account = await accountsRepository.getAccountById(accountId);
   if (!account) {
-    error(res, 404, "Account not found");
+    error(res, 404, t(req, "accounts.accountNotFound"));
     return;
   }
 
@@ -226,17 +227,20 @@ const rejectAccount = async (req: Request, res: Response): Promise<void> => {
     userId: account.ownerId,
     accountId: account.id,
     accountNumber: account.accountNumber,
-    reason: String(req.body.reason ?? "No reason provided")
+    reason: String(req.body.reason ?? t(req, "accounts.noReasonProvided"))
   });
 
-  success(res, "Account rejected", { ...updated, reason: req.body.reason ?? "No reason provided" });
+  success(res, t(req, "accounts.rejected"), {
+    ...updated,
+    reason: req.body.reason ?? t(req, "accounts.noReasonProvided")
+  });
 };
 
 const updateAccountStatus = async (req: Request, res: Response): Promise<void> => {
   const accountId = String(req.params.id);
   const account = await accountsRepository.getAccountById(accountId);
   if (!account) {
-    error(res, 404, "Account not found");
+    error(res, 404, t(req, "accounts.accountNotFound"));
     return;
   }
 
@@ -259,7 +263,7 @@ const updateAccountStatus = async (req: Request, res: Response): Promise<void> =
     });
   }
 
-  success(res, "Account status updated", { ...updated, reason: req.body.reason ?? null });
+  success(res, t(req, "accounts.statusUpdated"), { ...updated, reason: req.body.reason ?? null });
 };
 
 export const accountsService = {

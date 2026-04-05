@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { success } from "../utils/response";
 import { statsRepository } from "../repositories/implementations/prismaStats.repository";
 import { cacheGet, cacheSet } from "./cache";
+import { t } from "../i18n";
 
 function buildDateFilter(query: { fromDate?: string; toDate?: string }) {
   const fromDate = query.fromDate ? new Date(query.fromDate) : undefined;
@@ -21,7 +22,7 @@ const overview = async (req: Request, res: Response): Promise<void> => {
   const key = "stats:overview";
   const cached = await cacheGet<object>(key);
   if (cached) {
-    success(res, "Overview stats fetched", cached);
+    success(res, t(req, "stats.overviewFetched"), cached);
     return;
   }
 
@@ -41,7 +42,7 @@ const overview = async (req: Request, res: Response): Promise<void> => {
   };
 
   await cacheSet(key, data, 300);
-  success(res, "Overview stats fetched", data);
+  success(res, t(req, "stats.overviewFetched"), data);
 };
 
 const transactionsSeries = async (req: Request, res: Response): Promise<void> => {
@@ -49,7 +50,7 @@ const transactionsSeries = async (req: Request, res: Response): Promise<void> =>
   const key = `stats:transactions:${JSON.stringify(query)}`;
   const cached = await cacheGet<object>(key);
   if (cached) {
-    success(res, "Transaction stats fetched", cached);
+    success(res, t(req, "stats.transactionFetched"), cached);
     return;
   }
 
@@ -57,7 +58,7 @@ const transactionsSeries = async (req: Request, res: Response): Promise<void> =>
   const data = await statsRepository.groupTransactions({ ...(createdAt ? { createdAt } : {}) });
 
   await cacheSet(key, data, 300);
-  success(res, "Transaction stats fetched", data);
+  success(res, t(req, "stats.transactionFetched"), data);
 };
 
 const accountsSeries = async (req: Request, res: Response): Promise<void> => {
@@ -65,7 +66,7 @@ const accountsSeries = async (req: Request, res: Response): Promise<void> => {
   const key = `stats:accounts:${JSON.stringify(query)}`;
   const cached = await cacheGet<object>(key);
   if (cached) {
-    success(res, "Account stats fetched", cached);
+    success(res, t(req, "stats.accountFetched"), cached);
     return;
   }
 
@@ -73,7 +74,7 @@ const accountsSeries = async (req: Request, res: Response): Promise<void> => {
   const data = await statsRepository.groupAccounts({ ...(createdAt ? { createdAt } : {}) });
 
   await cacheSet(key, data, 300);
-  success(res, "Account stats fetched", data);
+  success(res, t(req, "stats.accountFetched"), data);
 };
 
 const usersSeries = async (req: Request, res: Response): Promise<void> => {
@@ -81,7 +82,7 @@ const usersSeries = async (req: Request, res: Response): Promise<void> => {
   const key = `stats:users:${JSON.stringify(query)}`;
   const cached = await cacheGet<object>(key);
   if (cached) {
-    success(res, "User stats fetched", cached);
+    success(res, t(req, "stats.userFetched"), cached);
     return;
   }
 
@@ -89,7 +90,7 @@ const usersSeries = async (req: Request, res: Response): Promise<void> => {
   const data = await statsRepository.groupUsersByRole(createdAt ? { createdAt } : undefined);
 
   await cacheSet(key, data, 300);
-  success(res, "User stats fetched", data);
+  success(res, t(req, "stats.userFetched"), data);
 };
 
 export const statsService = {

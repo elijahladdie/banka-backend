@@ -7,6 +7,7 @@ import { paginationMeta } from "../utils/pagination";
 import { parsePagination } from "../utils/pagination";
 import { notificationService } from "./notification.service";
 import { buildUsersSearchCondition } from "../utils/search.helper";
+import { t } from "../i18n";
 
 const buildWhereConditions = (query: Record<string, any>): Record<string, any> => {
   const { search, role, status } = query;
@@ -32,6 +33,7 @@ const formatUserResponse = (user: any): Record<string, any> => {
     firstName: user.firstName,
     lastName: user.lastName,
     email: user.email,
+    preferredLanguage: user.preferredLanguage,
     age: user.age,
     profilePicture: user.profilePicture,
     nationalId: user.nationalId,
@@ -48,6 +50,7 @@ const formatUserDetailResponse = (user: any): Record<string, any> => {
     firstName: user.firstName,
     lastName: user.lastName,
     email: user.email,
+    preferredLanguage: user.preferredLanguage,
     phoneNumber: user.phoneNumber,
     nationalId: user.nationalId,
     status: user.status,
@@ -65,7 +68,7 @@ const listUsers = async (req: Request, res: Response): Promise<void> => {
 
   const cached = await cacheGet<unknown>(cacheKey);
   if (cached) {
-    success(res, "Users fetched", cached as object, paginationMeta(page, limit, 0));
+    success(res, t(req, "users.fetched"), cached as object, paginationMeta(page, limit, 0));
     return;
   }
 
@@ -83,25 +86,25 @@ const listUsers = async (req: Request, res: Response): Promise<void> => {
   ]);
 
   if (users.length === 0) {
-    error(res, 404, "No users found");
+    error(res, 404, t(req, "users.noneFound"));
     return;
   }
 
   const payload = users.map((user) => formatUserResponse(user));
   await cacheSet(cacheKey, payload, 60);
 
-  success(res, "Users fetched", payload, paginationMeta(page, limit, total));
+  success(res, t(req, "users.fetched"), payload, paginationMeta(page, limit, total));
 };
 
 const createUser = async (req: Request, res: Response): Promise<void> => {
   if (!req.user) {
-    error(res, 401, "Unauthorized");
+    error(res, 401, t(req, "common.unauthorized"));
     return;
   }
 
   const isManager = req.user.userRoles.some((item: { role: { slug: string } }) => item.role.slug === "manager");
   if (!isManager) {
-    error(res, 403, "Only managers can create user accounts");
+    error(res, 403, t(req, "users.onlyManagersCanCreate"));
     return;
   }
 
@@ -114,13 +117,13 @@ const createUser = async (req: Request, res: Response): Promise<void> => {
   });
 
   if (exists) {
-    error(res, 409, "User already exists with this email, nationalId or phoneNumber");
+    error(res, 409, t(req, "users.alreadyExists"));
     return;
   }
 
   const role = await prisma.role.findUnique({ where: { slug: roleSlug } });
   if (!role) {
-    error(res, 400, "Role not found");
+    error(res, 400, t(req, "users.roleNotFound"));
     return;
   }
 
@@ -148,7 +151,7 @@ const createUser = async (req: Request, res: Response): Promise<void> => {
 
   success(
     res,
-    "User created",
+    t(req, "users.created"),
     {
       id: user.id,
       email: user.email,
@@ -169,24 +172,24 @@ const getUserById = async (req: Request, res: Response): Promise<void> => {
   });
 
   if (!user) {
-    error(res, 404, "User not found");
+    error(res, 404, t(req, "auth.userNotFound"));
     return;
   }
 
-  success(res, "User fetched", formatUserDetailResponse(user));
+  success(res, t(req, "users.fetchedOne"), formatUserDetailResponse(user));
 };
 
 const updateUser = async (req: Request, res: Response): Promise<void> => {
   const userId = String(req.params.id);
 
   if (!req.user) {
-    error(res, 401, "Unauthorized");
+    error(res, 401, t(req, "common.unauthorized"));
     return;
   }
 
   const isManager = req.user.userRoles.some((item: { role: { slug: string } }) => item.role.slug === "manager");
   if (req.user.id !== userId && !isManager) {
-    error(res, 403, "Forbidden");
+    error(res, 403, t(req, "common.forbidden"));
     return;
   }
 
@@ -205,7 +208,7 @@ const updateUser = async (req: Request, res: Response): Promise<void> => {
   });
 
   if (!existingUser) {
-    error(res, 404, "User not found");
+    error(res, 404, t(req, "auth.userNotFound"));
     return;
   }
 
@@ -226,11 +229,12 @@ const updateUser = async (req: Request, res: Response): Promise<void> => {
     void notificationService.profileUpdated({ receiverId: userId });
   }
 
-  success(res, "User updated", {
+  success(res, t(req, "users.updated"), {
     id: user.id,
     firstName: user.firstName,
     lastName: user.lastName,
     email: user.email,
+    preferredLanguage: user.preferredLanguage,
     status: user.status,
     roles: user.userRoles.map((ur) => ur.role.slug)
   });
@@ -246,7 +250,7 @@ const updateUserStatus = async (req: Request, res: Response): Promise<void> => {
   });
 
   if (!currentUser) {
-    error(res, 404, "User not found");
+    error(res, 404, t(req, "auth.userNotFound"));
     return;
   }
 
@@ -266,19 +270,19 @@ const updateUserStatus = async (req: Request, res: Response): Promise<void> => {
     });
   }
 
-  success(res, "User status updated", { id: user.id, status: user.status });
+  success(res, t(req, "users.statusUpdated"), { id: user.id, status: user.status });
 };
 
 const changeUserPassword = async (req: Request, res: Response): Promise<void> => {
   const userId = String(req.params.id);
 
   if (!req.user) {
-    error(res, 401, "Unauthorized");
+    error(res, 401, t(req, "common.unauthorized"));
     return;
   }
 
   if (req.user.id !== userId) {
-    error(res, 403, "Forbidden");
+    error(res, 403, t(req, "common.forbidden"));
     return;
   }
 
@@ -290,13 +294,13 @@ const changeUserPassword = async (req: Request, res: Response): Promise<void> =>
   });
 
   if (!user) {
-    error(res, 404, "User not found");
+    error(res, 404, t(req, "auth.userNotFound"));
     return;
   }
 
   const isValid = await bcrypt.compare(currentPassword, user.password);
   if (!isValid) {
-    error(res, 400, "Current password is invalid");
+    error(res, 400, t(req, "users.currentPasswordInvalid"));
     return;
   }
 
@@ -308,7 +312,7 @@ const changeUserPassword = async (req: Request, res: Response): Promise<void> =>
 
   void notificationService.passwordChanged({ receiverId: userId });
 
-  success(res, "Password updated", { id: userId });
+  success(res, t(req, "users.passwordUpdated"), { id: userId });
 };
 
 const softDeleteUser = async (req: Request, res: Response): Promise<void> => {
@@ -321,7 +325,7 @@ const softDeleteUser = async (req: Request, res: Response): Promise<void> => {
 
   await cacheDelByPrefix("users:");
 
-  success(res, "User soft deleted", { id: user.id, status: user.status });
+  success(res, t(req, "users.softDeleted"), { id: user.id, status: user.status });
 };
 
 export const usersService = {

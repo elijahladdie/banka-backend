@@ -20,6 +20,8 @@ i18n.configure({
   syncFiles: false
 });
 
+export const i18nMiddleware = i18n.init;
+
 function isLocale(value: string): value is Locale {
   return supportedLocales.includes(value as Locale);
 }

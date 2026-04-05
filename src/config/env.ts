@@ -18,6 +18,8 @@ const validatedEnv = cleanEnv(process.env, {
 
   FRONTEND_URL: url({ default: "http://localhost:3000" }),
 
+  DATABASE_SSL: bool({ default: true }),
+
   
   SMTP_PORT: num({ default: 587 }),
   SMTP_HOST: str(),
@@ -40,6 +42,8 @@ export const env = {
   cookieSecure: validatedEnv.COOKIE_SECURE,
 
   frontendUrl: validatedEnv.FRONTEND_URL,
+
+  databaseSsl: validatedEnv.DATABASE_SSL,
 
   redisUrl: validatedEnv.REDIS_URL,
 

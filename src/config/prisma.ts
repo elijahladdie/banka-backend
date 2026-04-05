@@ -1,16 +1,20 @@
-import { PrismaClient } from '@prisma/client';
-import { Pool } from 'pg';
-import { PrismaPg } from '@prisma/adapter-pg';
-import { logger } from './logger';
+import { PrismaClient } from "@prisma/client";
+import { Pool } from "pg";
+import { PrismaPg } from "@prisma/adapter-pg";
+import { env } from "./env";
+import { logger } from "./logger";
 
-const connectionString = `${process.env.DATABASE_URL}`;
+const connectionString = env.databaseUrl;
 
-const pool = new Pool({ connectionString });
+const pool = new Pool({
+  connectionString,
+  ssl: env.databaseSsl ? { rejectUnauthorized: false } : undefined
+});
 const adapter = new PrismaPg(pool);
 
 export const prisma = new PrismaClient({
   adapter,
-  log: ['query', 'info', 'warn', 'error'],
+  log: ["query", "info", "warn", "error"]
 });
 
 export const verifyConnection = async (): Promise<boolean> => {
@@ -21,7 +25,6 @@ export const verifyConnection = async (): Promise<boolean> => {
     return true;
   } catch (error) {
     logger.error("Failed to connect to database:");
-    process.exit(1)
-
+    process.exit(1);
   }
-}
+};

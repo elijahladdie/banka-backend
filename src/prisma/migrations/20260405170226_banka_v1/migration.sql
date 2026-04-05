@@ -2,6 +2,9 @@
 CREATE TYPE "UserStatus" AS ENUM ('active', 'inactive', 'suspended', 'pending_approval');
 
 -- CreateEnum
+CREATE TYPE "NotificationDirection" AS ENUM ('SENT', 'RECEIVED');
+
+-- CreateEnum
 CREATE TYPE "AccountStatus" AS ENUM ('Active', 'Inactive', 'Dormant');
 
 -- CreateEnum
@@ -14,7 +17,7 @@ CREATE TYPE "TransactionType" AS ENUM ('deposit', 'transfer', 'withdraw');
 CREATE TYPE "TransactionStatus" AS ENUM ('completed', 'failed', 'pending', 'reversed');
 
 -- CreateEnum
-CREATE TYPE "NotificationType" AS ENUM ('ACCOUNT_APPROVED', 'ACCOUNT_REJECTED', 'ACCOUNT_FROZEN', 'ACCOUNT_DORMANT', 'DEPOSIT_RECEIVED', 'WITHDRAWAL_PROCESSED', 'TRANSFER_SENT', 'TRANSFER_RECEIVED', 'PASSWORD_CHANGED', 'PROFILE_UPDATED', 'USER_ACTIVATED', 'USER_DEACTIVATED', 'WELCOME');
+CREATE TYPE "NotificationType" AS ENUM ('ACCOUNT_APPROVED', 'ACCOUNT_REJECTED', 'ACCOUNT_FROZEN', 'ACCOUNT_DORMANT', 'ACCOUNT_CLOSED', 'ACCOUNT_INACTIVE_WARNING', 'DEPOSIT_RECEIVED', 'WITHDRAWAL_CODE_SENT', 'WITHDRAWAL_PROCESSED', 'TRANSFER_SENT', 'TRANSFER_RECEIVED', 'PASSWORD_CHANGED', 'PROFILE_UPDATED', 'USER_ACTIVATED', 'USER_DEACTIVATED', 'BANK_ACCOUNT_CREATED', 'WELCOME');
 
 -- CreateEnum
 CREATE TYPE "AuditAction" AS ENUM ('USER_CREATED', 'USER_UPDATED', 'USER_ACTIVATED', 'USER_DEACTIVATED', 'USER_SUSPENDED', 'ACCOUNT_CREATED', 'ACCOUNT_APPROVED', 'ACCOUNT_REJECTED', 'ACCOUNT_STATUS_CHANGED', 'TRANSACTION_REVERSED', 'PASSWORD_RESET', 'ROLE_ASSIGNED', 'ROLE_REMOVED');
@@ -27,6 +30,7 @@ CREATE TABLE "User" (
     "email" TEXT NOT NULL,
     "phoneNumber" TEXT,
     "nationalId" TEXT NOT NULL,
+    "preferredLanguage" TEXT NOT NULL DEFAULT 'en',
     "isVerified" BOOLEAN NOT NULL DEFAULT false,
     "profilePicture" TEXT,
     "password" TEXT NOT NULL,
@@ -86,6 +90,7 @@ CREATE TABLE "Transaction" (
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "reference" TEXT NOT NULL,
     "status" "TransactionStatus" NOT NULL DEFAULT 'completed',
+    "confirmationToken" TEXT,
     "description" TEXT NOT NULL,
     "balanceBefore" DECIMAL(15,2) NOT NULL,
     "balanceAfter" DECIMAL(15,2) NOT NULL,
@@ -108,8 +113,8 @@ CREATE TABLE "Notification" (
     "readAt" TIMESTAMP(3),
     "metadata" JSONB,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "receiverId" TEXT NOT NULL,
-    "senderId" TEXT,
+    "userId" TEXT NOT NULL,
+    "direction" "NotificationDirection" NOT NULL,
 
     CONSTRAINT "Notification_pkey" PRIMARY KEY ("id")
 );
@@ -189,9 +194,6 @@ ALTER TABLE "UserRole" ADD CONSTRAINT "UserRole_roleId_fkey" FOREIGN KEY ("roleI
 ALTER TABLE "BankAccount" ADD CONSTRAINT "BankAccount_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "BankAccount" ADD CONSTRAINT "BankAccount_createdBy_fkey" FOREIGN KEY ("createdBy") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
 ALTER TABLE "Transaction" ADD CONSTRAINT "Transaction_fromAccount_fkey" FOREIGN KEY ("fromAccount") REFERENCES "BankAccount"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -201,10 +203,7 @@ ALTER TABLE "Transaction" ADD CONSTRAINT "Transaction_toAccount_fkey" FOREIGN KE
 ALTER TABLE "Transaction" ADD CONSTRAINT "Transaction_performedBy_fkey" FOREIGN KEY ("performedBy") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Notification" ADD CONSTRAINT "Notification_receiverId_fkey" FOREIGN KEY ("receiverId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "Notification" ADD CONSTRAINT "Notification_senderId_fkey" FOREIGN KEY ("senderId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "Notification" ADD CONSTRAINT "Notification_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "AuditLog" ADD CONSTRAINT "AuditLog_performedById_fkey" FOREIGN KEY ("performedById") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

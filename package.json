@@ -6,12 +6,15 @@
   "scripts": {
     "dev": "nodemon --exec tsx src/index.ts",
     "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit",
     "start": "node dist/index.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:seed": "tsx src/prisma/seed.ts",
     "prepare": "git config core.hooksPath .husky",
     "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "husky": "sh ./husky.sh",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run"

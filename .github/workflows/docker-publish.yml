@@ -1,117 +1,165 @@
 name: Build, Test, and Publish Docker Image
 
 on:
-	push:
-		branches:
-			- develop
-	pull_request:
+  push:
+    branches:
+      - develop
+  pull_request:
 
 permissions:
-	contents: read
-	packages: write
+  contents: read
+  packages: write
 
 jobs:
-	smoke-test:
-		runs-on: ubuntu-latest
+  quality-checks:
+    runs-on: ubuntu-latest
 
-		services:
-			postgres:
-				image: postgres:16
-				env:
-					POSTGRES_USER: banka
-					POSTGRES_PASSWORD: banka
-					POSTGRES_DB: banka
-				ports:
-					- 5432:5432
-				options: >-
-					--health-cmd="pg_isready -U banka -d banka"
-					--health-interval=10s
-					--health-timeout=5s
-					--health-retries=5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-		steps:
-			- name: Checkout
-				uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
 
-			- name: Build Docker image
-				run: docker build -t banka-backend:ci .
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
 
-			- name: Start container and verify health
-				run: |
-					set -e
+      - name: Run quality gate
+        run: yarn husky
 
-					docker run -d --name banka-backend-ci --network host \
-						-e PORT=5000 \
-						-e NODE_ENV=production \
-						-e DATABASE_URL=postgresql://banka:banka@127.0.0.1:5432/banka \
-						-e JWT_SECRET=ci-secret \
-						-e JWT_EXPIRES_IN=1d \
-						-e COOKIE_NAME=banka_token \
-						-e COOKIE_SECURE=false \
-						-e FRONTEND_URL=http://localhost:3000 \
-						-e REDIS_URL=redis://127.0.0.1:6379 \
-						-e SMTP_HOST=localhost \
-						-e SMTP_PORT=587 \
-						-e SMTP_USER=test \
-						-e SMTP_PASS=test \
-						-e SMTP_FROM=no-reply@banka.local \
-						banka-backend:ci
+  test:
+    runs-on: ubuntu-latest
+    needs: quality-checks
 
-					for i in $(seq 1 30); do
-						if curl -fsS http://127.0.0.1:5000/health >/dev/null; then
-							echo "Health check passed"
-							exit 0
-						fi
-						sleep 2
-					done
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-					echo "Health check failed"
-					docker logs banka-backend-ci
-					exit 1
+      - name: Build Docker image
+        run: docker build -t banka-backend:ci .
 
-			- name: Show container logs on failure
-				if: failure()
-				run: docker logs banka-backend-ci || true
+      - name: Start dependencies
+        run: |
+          set -e
+          db_ready=false
 
-			- name: Cleanup test container
-				if: always()
-				run: docker rm -f banka-backend-ci || true
+          docker network create banka-ci-net
 
-	publish:
-		runs-on: ubuntu-latest
-		needs: smoke-test
-		if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+          docker run -d --name banka-pg-ci --network banka-ci-net \
+            -e POSTGRES_USER=banka \
+            -e POSTGRES_PASSWORD=banka \
+            -e POSTGRES_DB=banka \
+            postgres:16
 
-		steps:
-			- name: Checkout
-				uses: actions/checkout@v4
+          docker run -d --name banka-redis-ci --network banka-ci-net redis:7-alpine
 
-			- name: Set up Docker Buildx
-				uses: docker/setup-buildx-action@v3
+          for i in $(seq 1 30); do
+            if docker exec banka-pg-ci pg_isready -U banka -d banka >/dev/null 2>&1; then
+              echo "Postgres is ready"
+              db_ready=true
+              break
+            fi
+            sleep 2
+          done
 
-			- name: Log in to GHCR
-				uses: docker/login-action@v3
-				with:
-					registry: ghcr.io
-					username: ${{ github.actor }}
-					password: ${{ secrets.GITHUB_TOKEN }}
+          if [ "$db_ready" = true ]; then
+            exit 0
+          fi
 
-			- name: Extract Docker metadata
-				id: meta
-				uses: docker/metadata-action@v5
-				with:
-					images: ghcr.io/${{ github.repository }}
-					tags: |
-						type=raw,value=latest
-						type=sha
+          echo "Postgres did not become ready"
+          docker logs banka-pg-ci || true
+          exit 1
 
-			- name: Build and push Docker image
-				uses: docker/build-push-action@v6
-				with:
-					context: .
-					file: ./Dockerfile
-					push: true
-					tags: ${{ steps.meta.outputs.tags }}
-					labels: ${{ steps.meta.outputs.labels }}
-					cache-from: type=gha
-					cache-to: type=gha,mode=max
+      - name: Start app container
+        run: |
+          set -e
+
+          docker run -d --name banka-backend-ci --network banka-ci-net -p 5000:5000 \
+            -e PORT=5000 \
+            -e NODE_ENV=production \
+            -e DATABASE_URL=postgresql://banka:banka@banka-pg-ci:5432/banka \
+            -e JWT_SECRET=ci-secret \
+            -e JWT_EXPIRES_IN=1d \
+            -e COOKIE_NAME=banka_token \
+            -e COOKIE_SECURE=false \
+            -e FRONTEND_URL=http://localhost:3000 \
+            -e REDIS_URL=redis://banka-redis-ci:6379 \
+            -e SMTP_HOST=localhost \
+            -e SMTP_PORT=587 \
+            -e SMTP_USER=test \
+            -e SMTP_PASS=test \
+            -e SMTP_FROM=no-reply@banka.local \
+            banka-backend:ci
+
+      - name: Verify app health
+        run: |
+          set -e
+
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:5000/health >/dev/null; then
+              echo "Health check passed"
+              exit 0
+            fi
+            sleep 2
+          done
+
+          echo "Health check failed"
+          docker logs banka-backend-ci
+          exit 1
+
+      - name: Show container logs on failure
+        if: failure()
+        run: |
+          docker logs banka-backend-ci || true
+          docker logs banka-pg-ci || true
+          docker logs banka-redis-ci || true
+
+      - name: Cleanup test containers
+        if: always()
+        run: |
+          docker rm -f banka-backend-ci banka-pg-ci banka-redis-ci 2>/dev/null || true
+          docker network rm banka-ci-net 2>/dev/null || true
+
+  publish:
+    runs-on: ubuntu-latest
+    needs:
+      - quality-checks
+      - test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=raw,value=latest
+            type=sha
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
